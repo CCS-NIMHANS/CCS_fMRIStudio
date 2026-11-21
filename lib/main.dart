@@ -93,9 +93,9 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   bool _checkingUpdates = false;
   bool _busy = false;
   String _statusMessage =
-      'Start in Step 1: open a preprocessed folder, pick NIfTI files, or convert DICOMs.';
+      'Open a patient folder (raw DICOM, NIfTI, or preprocessed outputs) to begin.';
   final List<String> _sidecarLog = [];
-  List<String> _detectedItems = [];
+  FolderScanResult? _lastScan;
 
   rust_api.NiftiHeaderSummary? _headerSummary;
   rust_api.LesionPipelineSummary? _pipelineSummary;
@@ -126,6 +126,9 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       }
     }
 
+    sync(_t1DicomCtrl, _session.t1DicomDir);
+    sync(_boldDicomCtrl, _session.boldDicomDir);
+    sync(_dicomOutCtrl, _session.dicomOutDir);
     sync(_rawT1Ctrl, _session.rawT1Path);
     sync(_rawBoldCtrl, _session.rawBoldPath);
     sync(_preprocOutCtrl, _session.preprocOutDir);
@@ -203,23 +206,30 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     }
   }
 
-  Future<void> _openPreprocessedFolder({bool jumpToDenoise = false}) async {
+  Future<void> _openPatientFolder({bool jumpToDenoise = false}) async {
     final folder = await FilePicker.getDirectoryPath(
-      dialogTitle: 'Select Subject Folder (Raw or Preprocessed)',
+      dialogTitle:
+          'Open Patient / MRI Folder (DICOM, NIfTI, or Preprocessed)',
     );
     if (folder == null || folder.isEmpty) return;
-    final found = _session.autoPopulateFromFolder(folder);
+    final scan = _session.scanFolder(folder);
+    final name = FmriSessionState.basename(scan.rootFolder);
     setState(() {
-      _detectedItems = found;
-      if (found.isEmpty) {
-        _statusMessage =
-            'No standard NIfTI outputs found in $folder. You can still Browse individual files.';
-      } else {
-        _statusMessage =
-            'Loaded ${found.length} files from $folder: ${found.join(', ')}';
-        if (jumpToDenoise && _session.boldMniPath.isNotEmpty) {
-          _stepIndex = 3;
-        }
+      _lastScan = scan;
+      switch (scan.kind) {
+        case DetectedDatasetKind.preprocessed:
+          _statusMessage =
+              'Loaded preprocessed MNI outputs from "$name" (${scan.detectedLabels.length} files). Ready for Step 3 (Lesion) or Step 4 (Denoise).';
+          if (jumpToDenoise) _stepIndex = 3;
+        case DetectedDatasetKind.rawNifti:
+          _statusMessage =
+              'Loaded raw NIfTI scans from "$name". Click "Continue to Step 2: Preprocess".';
+        case DetectedDatasetKind.rawDicom:
+          _statusMessage =
+              'Detected ${scan.dicomSeries.length} scanner DICOM series in "$name". Click "Convert DICOMs to NIfTI & Continue".';
+        case DetectedDatasetKind.empty:
+          _statusMessage =
+              'No MRI files found in "$name". Choose a folder with .IMA/.dcm series folders or .nii/.nii.gz files.';
       }
     });
     if (_session.boldMniPath.isNotEmpty) {
@@ -229,7 +239,38 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     }
   }
 
-  Future<void> _runDicomConvert() async {
+  Future<void> _openSingleFile() async {
+    final result = await FilePicker.pickFiles(
+      dialogTitle: 'Open NIfTI Volume (.nii / .nii.gz) or DICOM File',
+    );
+    final path = result?.files.single.path;
+    if (path == null || path.isEmpty) return;
+    if (FmriSessionState.isDicomFile(path)) {
+      final scan = _session.handlePickedFile(path);
+      setState(() {
+        _lastScan = scan;
+        _statusMessage =
+            scan.notice ??
+            'Detected scanner DICOM files; scanned parent folder for series.';
+      });
+      return;
+    }
+    if (FmriSessionState.isNiftiFile(path)) {
+      final scan = _session.handlePickedFile(path);
+      setState(() {
+        _lastScan = scan;
+        _inspectNiftiCtrl.text = path;
+      });
+      await _inspectAndRender(path);
+      return;
+    }
+    setState(() {
+      _statusMessage =
+          'Unsupported file "${FmriSessionState.basename(path)}". Pick a .nii / .nii.gz file, or click "Open Patient Folder".';
+    });
+  }
+
+  Future<void> _runDicomConvert({bool autoAdvance = false}) async {
     final t1Dir = _t1DicomCtrl.text.trim();
     final boldDir = _boldDicomCtrl.text.trim();
     var outDir = _dicomOutCtrl.text.trim();
@@ -258,13 +299,14 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         },
       );
       if (code == 0) {
-        final found = _session.autoPopulateFromFolder(outDir);
+        final scan = _session.scanFolder(outDir);
         setState(() {
-          _detectedItems = found;
+          _lastScan = scan;
           _preprocOutCtrl.text =
               '${Directory(outDir).parent.path}${Platform.pathSeparator}preproc';
           _statusMessage =
-              'DICOM conversion succeeded. Ready for Step 2 (Preprocess).';
+              'DICOM conversion succeeded! Ready for Step 2 (Preprocess).';
+          if (autoAdvance) _stepIndex = 1;
         });
       } else {
         setState(
@@ -326,9 +368,9 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         },
       );
       if (code == 0) {
-        final found = _session.autoPopulateFromFolder(outDir);
+        final scan = _session.scanFolder(outDir);
         setState(() {
-          _detectedItems = found;
+          _lastScan = scan;
           _statusMessage =
               'ANTsPy preprocessing complete! Outputs auto-loaded into Steps 3 & 4.';
         });
@@ -346,8 +388,19 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     final path = (explicitPath ?? _boldMniCtrl.text).trim();
     if (path.isEmpty) {
       setState(
-        () => _statusMessage = 'Select a NIfTI file via Browse or Open Folder first.',
+        () => _statusMessage = 'Select a NIfTI file or click Open Folder first.',
       );
+      return;
+    }
+    if (FmriSessionState.isDicomFile(path)) {
+      final scan = _session.handlePickedFile(path);
+      setState(() {
+        _lastScan = scan;
+        _stepIndex = 0;
+        _statusMessage =
+            scan.notice ??
+            'Scanner DICOM files must be converted to NIfTI in Step 1 first.';
+      });
       return;
     }
     setState(() {
@@ -459,15 +512,31 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     }
   }
 
+  Widget _stepIcon(IconData icon, bool ready) {
+    if (!ready) return Icon(icon);
+    return Badge(
+      backgroundColor: const Color(0xFF10B981),
+      smallSize: 8,
+      child: Icon(icon),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final step1Ready = _session.rawBoldPath.isNotEmpty ||
+        _session.boldMniPath.isNotEmpty ||
+        (_lastScan?.dicomSeries.isNotEmpty ?? false);
+    final step2Ready = _session.boldMniPath.isNotEmpty;
+    final step3Ready = _session.lesionMaskPath.isNotEmpty;
+    final step4Ready = _pipelineSummary != null;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
         title: const Text('CCS fMRI Studio'),
         actions: [
           TextButton.icon(
-            onPressed: _busy ? null : () => _openPreprocessedFolder(jumpToDenoise: false),
+            onPressed: _busy ? null : () => _openPatientFolder(),
             icon: const Icon(Icons.folder_open),
             label: const Text('Open Folder'),
           ),
@@ -514,26 +583,26 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                   labelType: NavigationRailLabelType.all,
                   onDestinationSelected: (idx) =>
                       setState(() => _stepIndex = idx),
-                  destinations: const [
+                  destinations: [
                     NavigationRailDestination(
-                      icon: Icon(Icons.drive_folder_upload_outlined),
-                      selectedIcon: Icon(Icons.drive_folder_upload),
-                      label: Text('1. Import'),
+                      icon: _stepIcon(Icons.drive_folder_upload_outlined, step1Ready),
+                      selectedIcon: _stepIcon(Icons.drive_folder_upload, step1Ready),
+                      label: const Text('1. Import'),
                     ),
                     NavigationRailDestination(
-                      icon: Icon(Icons.auto_awesome_outlined),
-                      selectedIcon: Icon(Icons.auto_awesome),
-                      label: Text('2. Preprocess'),
+                      icon: _stepIcon(Icons.auto_awesome_outlined, step2Ready),
+                      selectedIcon: _stepIcon(Icons.auto_awesome, step2Ready),
+                      label: const Text('2. Preprocess'),
                     ),
                     NavigationRailDestination(
-                      icon: Icon(Icons.brush_outlined),
-                      selectedIcon: Icon(Icons.brush),
-                      label: Text('3. Lesion'),
+                      icon: _stepIcon(Icons.brush_outlined, step3Ready),
+                      selectedIcon: _stepIcon(Icons.brush, step3Ready),
+                      label: const Text('3. Lesion'),
                     ),
                     NavigationRailDestination(
-                      icon: Icon(Icons.analytics_outlined),
-                      selectedIcon: Icon(Icons.analytics),
-                      label: Text('4. Denoise'),
+                      icon: _stepIcon(Icons.analytics_outlined, step4Ready),
+                      selectedIcon: _stepIcon(Icons.analytics, step4Ready),
+                      label: const Text('4. Denoise'),
                     ),
                   ],
                 ),
@@ -569,77 +638,78 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   }
 
   Widget _buildStep1Import(BuildContext context) {
+    final scan = _lastScan;
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildCard(
-            title: 'Quick Start: Open Subject / Preprocessed Folder',
+            title: 'Open Your MRI Scan',
+            subtitle:
+                'Choose any patient folder — raw scanner DICOMs (.IMA / .dcm), BIDS folders, raw NIfTI (.nii / .nii.gz), or already-preprocessed outputs. CCS fMRI Studio automatically detects what is inside and prepares the next step.',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Select a folder containing converted (`t1w`, `bold`) or preprocessed (`bold_mni`, `schaefer400_mni`, `wm_mask_mni`, `csf_mask_mni`, `confounds.tsv`, `lesion_mask_mni`) files to auto-fill every downstream step.',
-                  style: TextStyle(color: Color(0xFF94A3B8)),
+                const Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      avatar: Icon(Icons.medical_information_outlined, size: 16),
+                      label: Text('Scanner DICOMs (.IMA / .dcm)'),
+                    ),
+                    Chip(
+                      avatar: Icon(Icons.layers_outlined, size: 16),
+                      label: Text('Raw NIfTI / BIDS'),
+                    ),
+                    Chip(
+                      avatar: Icon(Icons.check_circle_outline, size: 16),
+                      label: Text('Preprocessed Outputs'),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 Wrap(
                   spacing: 12,
                   runSpacing: 8,
                   children: [
                     FilledButton.icon(
-                      onPressed: _busy
-                          ? null
-                          : () => _openPreprocessedFolder(jumpToDenoise: false),
+                      onPressed: _busy ? null : () => _openPatientFolder(),
                       icon: const Icon(Icons.folder_open),
-                      label: const Text('Browse Subject Folder'),
+                      label: const Text('Open Patient Folder'),
                     ),
-                    if (_session.boldMniPath.isNotEmpty)
-                      OutlinedButton.icon(
-                        onPressed: () => setState(() => _stepIndex = 3),
-                        icon: const Icon(Icons.arrow_forward),
-                        label: const Text('Go to Step 4: Denoise & FC'),
-                      ),
-                    if (_session.rawT1Path.isNotEmpty)
-                      OutlinedButton.icon(
-                        onPressed: () => setState(() => _stepIndex = 1),
-                        icon: const Icon(Icons.arrow_forward),
-                        label: const Text('Go to Step 2: Preprocess'),
-                      ),
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : _openSingleFile,
+                      icon: const Icon(Icons.insert_drive_file_outlined),
+                      label: const Text('Open Single NIfTI File'),
+                    ),
                   ],
                 ),
-                if (_detectedItems.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _detectedItems
-                        .map(
-                          (item) => Chip(
-                            avatar: const Icon(
-                              Icons.check_circle,
-                              size: 16,
-                              color: Color(0xFF2DD4BF),
-                            ),
-                            label: Text(item),
-                          ),
-                        )
-                        .toList(),
-                  ),
-                ],
               ],
             ),
           ),
+          if (scan != null) ...[
+            const SizedBox(height: 16),
+            _buildDetectedScanCard(scan),
+          ],
           const SizedBox(height: 16),
-          _buildCard(
-            title: 'Inspect Any NIfTI File Header (.nii / .nii.gz)',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+          Card(
+            color: const Color(0xFF1E293B),
+            child: ExpansionTile(
+              title: const Text(
+                'Advanced: Manual DICOM Folders & NIfTI Header Inspector',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                'Expand only if you want to specify custom T1w/BOLD DICOM directories or inspect a NIfTI header directly.',
+                style: TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+              ),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
               children: [
                 PathPickerField(
                   controller: _inspectNiftiCtrl,
-                  label: 'NIfTI Volume Path',
+                  label: 'NIfTI Volume Path (.nii / .nii.gz)',
                   hint: 'Browse any 3D T1w or 4D BOLD NIfTI file',
                   onPicked: (p) => _inspectAndRender(p),
                 ),
@@ -655,23 +725,18 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                   ),
                 ),
                 if (_headerSummary != null) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    'Dims: ${_headerSummary!.dims.join(" × ")} | '
-                    'Voxel: ${_headerSummary!.voxelSizes.map((v) => v.toStringAsFixed(2)).join(" × ")} mm | '
-                    'TR: ${_headerSummary!.trSec.toStringAsFixed(2)} s | '
-                    'Datatype code: ${_headerSummary!.datatypeCode}',
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Dims: ${_headerSummary!.dims.join(" × ")} | '
+                      'Voxel: ${_headerSummary!.voxelSizes.map((v) => v.toStringAsFixed(2)).join(" × ")} mm | '
+                      'TR: ${_headerSummary!.trSec.toStringAsFixed(2)} s | '
+                      'Datatype code: ${_headerSummary!.datatypeCode}',
+                    ),
                   ),
                 ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildCard(
-            title: 'Convert Raw DICOM Folders (dcm2niix)',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+                const Divider(height: 28, color: Colors.white12),
                 PathPickerField(
                   controller: _t1DicomCtrl,
                   label: 'T1w DICOM Folder',
@@ -693,17 +758,288 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                 const SizedBox(height: 12),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: FilledButton.icon(
-                    onPressed: _busy ? null : _runDicomConvert,
+                  child: OutlinedButton.icon(
+                    onPressed: _busy ? null : () => _runDicomConvert(),
                     icon: const Icon(Icons.transform),
                     label: const Text('Convert DICOMs to NIfTI'),
                   ),
                 ),
-                if (_sidecarLog.isNotEmpty) _buildLogBox(),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDetectedScanCard(FolderScanResult scan) {
+    final folderName = FmriSessionState.basename(scan.rootFolder);
+    final (badgeLabel, badgeColor) = switch (scan.kind) {
+      DetectedDatasetKind.preprocessed => (
+        'Preprocessed MNI Ready',
+        const Color(0xFF059669),
+      ),
+      DetectedDatasetKind.rawNifti => (
+        'Raw NIfTI Scans Found',
+        const Color(0xFF0284C7),
+      ),
+      DetectedDatasetKind.rawDicom => (
+        'Raw Scanner DICOMs Found',
+        const Color(0xFF0D9488),
+      ),
+      DetectedDatasetKind.empty => ('No MRI Files Found', const Color(0xFFB45309)),
+    };
+
+    String? validSeriesValue(String current, List<DicomSeriesInfo> list) {
+      for (final s in list) {
+        if (s.path == current) return current;
+      }
+      return null;
+    }
+
+    return Card(
+      color: const Color(0xFF1E293B),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                Text(
+                  'Detected Scan: $folderName',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Chip(
+                  backgroundColor: badgeColor.withValues(alpha: 0.25),
+                  side: BorderSide(color: badgeColor),
+                  label: Text(badgeLabel),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              scan.rootFolder,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+            ),
+            if (scan.notice != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF2DD4BF)),
+                ),
+                child: Text(
+                  scan.notice!,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: Color(0xFF99F6E4),
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            if (scan.kind == DetectedDatasetKind.rawDicom) ...[
+              Text(
+                'Found ${scan.dicomSeries.length} DICOM series. Confirm T1w & BOLD series below, then convert them to NIfTI in one click:',
+                style: const TextStyle(color: Color(0xFFCBD5E1)),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: validSeriesValue(
+                        _t1DicomCtrl.text,
+                        scan.dicomSeries,
+                      ),
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'T1w Anatomical Series',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: scan.dicomSeries
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s.path,
+                              child: Text(
+                                s.displayLabel,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setState(() {
+                            _t1DicomCtrl.text = v;
+                            _session.t1DicomDir = v;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: validSeriesValue(
+                        _boldDicomCtrl.text,
+                        scan.dicomSeries,
+                      ),
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: '4D BOLD fMRI Series',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: scan.dicomSeries
+                          .map(
+                            (s) => DropdownMenuItem(
+                              value: s.path,
+                              child: Text(
+                                s.displayLabel,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (v) {
+                        if (v != null) {
+                          setState(() {
+                            _boldDicomCtrl.text = v;
+                            _session.boldDicomDir = v;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  FilledButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => _runDicomConvert(autoAdvance: true),
+                    icon: const Icon(Icons.transform),
+                    label: const Text('Convert DICOMs to NIfTI & Continue →'),
+                  ),
+                  Text(
+                    'Saves to: ${FmriSessionState.basename(_dicomOutCtrl.text)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
+              ),
+              if (_sidecarLog.isNotEmpty) _buildLogBox(),
+            ] else if (scan.kind == DetectedDatasetKind.rawNifti) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (_session.rawT1Path.isNotEmpty)
+                    Chip(
+                      avatar: const Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: Color(0xFF2DD4BF),
+                      ),
+                      label: Text(
+                        'T1w: ${FmriSessionState.basename(_session.rawT1Path)}',
+                      ),
+                    ),
+                  if (_session.rawBoldPath.isNotEmpty)
+                    Chip(
+                      avatar: const Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: Color(0xFF2DD4BF),
+                      ),
+                      label: Text(
+                        'BOLD: ${FmriSessionState.basename(_session.rawBoldPath)}',
+                      ),
+                    ),
+                  if (_session.flairPath.isNotEmpty)
+                    Chip(
+                      avatar: const Icon(
+                        Icons.check_circle,
+                        size: 16,
+                        color: Color(0xFF2DD4BF),
+                      ),
+                      label: Text(
+                        'FLAIR: ${FmriSessionState.basename(_session.flairPath)}',
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: () => setState(() => _stepIndex = 1),
+                  icon: const Icon(Icons.arrow_forward),
+                  label: const Text('Continue to Step 2: Preprocess →'),
+                ),
+              ),
+            ] else if (scan.kind == DetectedDatasetKind.preprocessed) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: scan.detectedLabels
+                    .map(
+                      (item) => Chip(
+                        avatar: const Icon(
+                          Icons.check_circle,
+                          size: 16,
+                          color: Color(0xFF2DD4BF),
+                        ),
+                        label: Text(item),
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: () => setState(() => _stepIndex = 2),
+                    icon: const Icon(Icons.brush),
+                    label: const Text('Open Lesion Editor (Step 3)'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () => setState(() => _stepIndex = 3),
+                    icon: const Icon(Icons.analytics),
+                    label: const Text('Denoise & View Brain (Step 4) →'),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const Text(
+                'No DICOM series (.IMA / .dcm) or NIfTI files (.nii / .nii.gz) were found inside this folder (or its immediate subfolders).\n'
+                'Tip: Select a patient folder such as Patient_01/pre containing scanner series folders (e.g. HEAD_T1_MPRAGE..., HEAD_EP2D_RS_FMRI...) or a NIfTI/preproc folder.',
+                style: TextStyle(color: Color(0xFFFDE68A)),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -713,6 +1049,8 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       padding: const EdgeInsets.all(20),
       child: _buildCard(
         title: 'Step 2: ANTsPy Spatial Normalization & Motion Correction',
+        subtitle:
+            'Align T1w and 4D BOLD scans into standard MNI brain space (~2 min). Choose Cost Function Masking or Enantiomorphic Healing for lesion scans.',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -910,6 +1248,8 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
             child: SingleChildScrollView(
               child: _buildCard(
                 title: 'Step 4: Lesion-Aware Rust Denoising & Connectivity',
+                subtitle:
+                    'Clean noisy CSF/WM/motion signals, extract Schaefer-400 parcels, and inspect brain slices & biomarkers.',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -918,7 +1258,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                       child: OutlinedButton.icon(
                         onPressed: _busy
                             ? null
-                            : () => _openPreprocessedFolder(jumpToDenoise: true),
+                            : () => _openPatientFolder(jumpToDenoise: true),
                         icon: const Icon(Icons.folder_open),
                         label: const Text('Auto-Load Preprocessed Folder'),
                       ),
@@ -1179,6 +1519,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
 
   Widget _buildCard({
     required String title,
+    String? subtitle,
     required Widget child,
     bool expandChild = false,
   }) {
@@ -1193,6 +1534,13 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
               title,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                subtitle,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+              ),
+            ],
             const SizedBox(height: 12),
             if (expandChild) Expanded(child: child) else child,
           ],

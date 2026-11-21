@@ -2,6 +2,18 @@
 
 All notable changes to **CCS_fMRIStudio** are documented in this file.
 
+## [0.1.2] - 2026-11-21
+
+### Added
+- **Smart 1-Click Patient Folder Auto-Detection (`lib/src/session_state.dart`)**:
+  - `FmriSessionState.scanFolder` recursively inspects up to depth 2 to automatically recognize **raw scanner DICOM series** (`.IMA`, `.dcm`, `.dicom` subfolders such as `HEAD_EP2D_RS_FMRI...` and `HEAD_T1_MPRAGE_SAG_P2_ISO...`), **raw NIfTI / BIDS scans**, or **preprocessed MNI derivatives** (`preproc/bold_mni.nii`, atlases, WM/CSF masks, `confounds.tsv`).
+  - Automatically picks the best 3D isotropic T1w series (`SAG`/`ISO` preferred over `COR`/`TRA`) and highest-volume 4D BOLD series for one-click `dcm2niix` conversion.
+  - `handlePickedFile` intercepts single `.IMA`/`.dcm` picks and automatically promotes to the owning patient folder's DICOM series list instead of throwing a NIfTI header error.
+- **Zero-Jargon Guided Step 1 Onboarding (`lib/main.dart`)**:
+  - Replaced cryptic NIfTI filename instructions with a clear **"Open Your MRI Scan"** landing card (`Open Patient Folder` / `Open Single NIfTI File`), dynamic **"Detected Scan"** card with interactive DICOM series dropdowns and a single **"Convert DICOMs to NIfTI & Continue →"** CTA, completion badges in the 4-step sidebar, and a collapsed **"Advanced: Manual DICOM Folders & NIfTI Header Inspector"** section.
+- **Self-Contained Bundled Python Sidecar & Templates**:
+  - Declared `python_sidecar/` and `assets/templates/` in `pubspec.yaml` and added automatic runtime extraction into Application Support (`ensureSidecarProjectDir`) so DICOM conversion, `ANTsPy` preprocessing, and lesion segmentation work inside standalone packaged desktop apps without a local repo checkout.
+
 ## [0.1.1] - 2026-11-21
 
 ### Added
