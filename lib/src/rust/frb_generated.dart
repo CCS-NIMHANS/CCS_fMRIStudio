@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 1368812239;
+  int get rustContentHash => -1668885918;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -76,15 +76,76 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
 }
 
 abstract class RustLibApi extends BaseApi {
+  Future<LesionSummaryDto> crateApiAutoSegmentLesionAsymmetry({
+    required String t1Path,
+    String? flairPath,
+    required double zThreshold,
+    required String outMaskPath,
+  });
+
+  Future<LesionSummaryDto> crateApiEditLesionMaskBrush({
+    required String maskPath,
+    required String refNiftiPath,
+    required int cx,
+    required int cy,
+    required int cz,
+    required double radiusVoxels,
+    required bool erase,
+    String? slicePlaneOnly,
+    required String outMaskPath,
+  });
+
+  Future<LesionSummaryDto> crateApiEditLesionMaskMagicWand({
+    required String t1Path,
+    required String maskPath,
+    required int seedX,
+    required int seedY,
+    required int seedZ,
+    required double tolerance,
+    required String outMaskPath,
+  });
+
   Future<EngineInfo> crateApiEngineInfo();
 
   Future<NiftiHeaderSummary> crateApiInspectNifti({required String path});
+
+  Future<LesionSummaryDto> crateApiMorphologyLesionMask({
+    required String maskPath,
+    required String refNiftiPath,
+    required String operation,
+    required int param,
+    required String outMaskPath,
+  });
 
   Future<SliceRgba> crateApiRenderSliceRgba({
     required String path,
     required String plane,
     required int sliceIndex,
     required int timepoint,
+  });
+
+  Future<SliceRgba> crateApiRenderSliceWithLesionRgba({
+    required String path,
+    String? lesionMaskPath,
+    required String plane,
+    required int sliceIndex,
+    required int timepoint,
+    required double overlayAlpha,
+  });
+
+  Future<LesionPipelineSummary> crateApiRunLesionAwarePipeline({
+    required String boldPath,
+    required String atlasPath,
+    String? lesionMaskPath,
+    String? atlasLabelsJsonPath,
+    String? wmMaskPath,
+    String? csfMaskPath,
+    String? confoundsTsvPath,
+    required double lowHz,
+    required double highHz,
+    required double fdThresholdMm,
+    required double maxDamagePct,
+    required int lesionDilateVoxels,
   });
 
   Future<DenoisePipelineSummary> crateApiRunRoiDenoisePipeline({
@@ -108,6 +169,175 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   });
 
   @override
+  Future<LesionSummaryDto> crateApiAutoSegmentLesionAsymmetry({
+    required String t1Path,
+    String? flairPath,
+    required double zThreshold,
+    required String outMaskPath,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(t1Path, serializer);
+          sse_encode_opt_String(flairPath, serializer);
+          sse_encode_f_32(zThreshold, serializer);
+          sse_encode_String(outMaskPath, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 1,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_lesion_summary_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiAutoSegmentLesionAsymmetryConstMeta,
+        argValues: [t1Path, flairPath, zThreshold, outMaskPath],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiAutoSegmentLesionAsymmetryConstMeta =>
+      const TaskConstMeta(
+        debugName: "auto_segment_lesion_asymmetry",
+        argNames: ["t1Path", "flairPath", "zThreshold", "outMaskPath"],
+      );
+
+  @override
+  Future<LesionSummaryDto> crateApiEditLesionMaskBrush({
+    required String maskPath,
+    required String refNiftiPath,
+    required int cx,
+    required int cy,
+    required int cz,
+    required double radiusVoxels,
+    required bool erase,
+    String? slicePlaneOnly,
+    required String outMaskPath,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(maskPath, serializer);
+          sse_encode_String(refNiftiPath, serializer);
+          sse_encode_u_32(cx, serializer);
+          sse_encode_u_32(cy, serializer);
+          sse_encode_u_32(cz, serializer);
+          sse_encode_f_32(radiusVoxels, serializer);
+          sse_encode_bool(erase, serializer);
+          sse_encode_opt_String(slicePlaneOnly, serializer);
+          sse_encode_String(outMaskPath, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_lesion_summary_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiEditLesionMaskBrushConstMeta,
+        argValues: [
+          maskPath,
+          refNiftiPath,
+          cx,
+          cy,
+          cz,
+          radiusVoxels,
+          erase,
+          slicePlaneOnly,
+          outMaskPath,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditLesionMaskBrushConstMeta =>
+      const TaskConstMeta(
+        debugName: "edit_lesion_mask_brush",
+        argNames: [
+          "maskPath",
+          "refNiftiPath",
+          "cx",
+          "cy",
+          "cz",
+          "radiusVoxels",
+          "erase",
+          "slicePlaneOnly",
+          "outMaskPath",
+        ],
+      );
+
+  @override
+  Future<LesionSummaryDto> crateApiEditLesionMaskMagicWand({
+    required String t1Path,
+    required String maskPath,
+    required int seedX,
+    required int seedY,
+    required int seedZ,
+    required double tolerance,
+    required String outMaskPath,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(t1Path, serializer);
+          sse_encode_String(maskPath, serializer);
+          sse_encode_u_32(seedX, serializer);
+          sse_encode_u_32(seedY, serializer);
+          sse_encode_u_32(seedZ, serializer);
+          sse_encode_f_32(tolerance, serializer);
+          sse_encode_String(outMaskPath, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 3,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_lesion_summary_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiEditLesionMaskMagicWandConstMeta,
+        argValues: [
+          t1Path,
+          maskPath,
+          seedX,
+          seedY,
+          seedZ,
+          tolerance,
+          outMaskPath,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiEditLesionMaskMagicWandConstMeta =>
+      const TaskConstMeta(
+        debugName: "edit_lesion_mask_magic_wand",
+        argNames: [
+          "t1Path",
+          "maskPath",
+          "seedX",
+          "seedY",
+          "seedZ",
+          "tolerance",
+          "outMaskPath",
+        ],
+      );
+
+  @override
   Future<EngineInfo> crateApiEngineInfo() {
     return handler.executeNormal(
       NormalTask(
@@ -116,7 +346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 1,
+            funcId: 4,
             port: port_,
           );
         },
@@ -144,7 +374,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 5,
             port: port_,
           );
         },
@@ -161,6 +391,53 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiInspectNiftiConstMeta =>
       const TaskConstMeta(debugName: "inspect_nifti", argNames: ["path"]);
+
+  @override
+  Future<LesionSummaryDto> crateApiMorphologyLesionMask({
+    required String maskPath,
+    required String refNiftiPath,
+    required String operation,
+    required int param,
+    required String outMaskPath,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(maskPath, serializer);
+          sse_encode_String(refNiftiPath, serializer);
+          sse_encode_String(operation, serializer);
+          sse_encode_u_32(param, serializer);
+          sse_encode_String(outMaskPath, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 6,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_lesion_summary_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiMorphologyLesionMaskConstMeta,
+        argValues: [maskPath, refNiftiPath, operation, param, outMaskPath],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiMorphologyLesionMaskConstMeta =>
+      const TaskConstMeta(
+        debugName: "morphology_lesion_mask",
+        argNames: [
+          "maskPath",
+          "refNiftiPath",
+          "operation",
+          "param",
+          "outMaskPath",
+        ],
+      );
 
   @override
   Future<SliceRgba> crateApiRenderSliceRgba({
@@ -180,7 +457,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 7,
             port: port_,
           );
         },
@@ -199,6 +476,144 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     debugName: "render_slice_rgba",
     argNames: ["path", "plane", "sliceIndex", "timepoint"],
   );
+
+  @override
+  Future<SliceRgba> crateApiRenderSliceWithLesionRgba({
+    required String path,
+    String? lesionMaskPath,
+    required String plane,
+    required int sliceIndex,
+    required int timepoint,
+    required double overlayAlpha,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(path, serializer);
+          sse_encode_opt_String(lesionMaskPath, serializer);
+          sse_encode_String(plane, serializer);
+          sse_encode_u_32(sliceIndex, serializer);
+          sse_encode_u_32(timepoint, serializer);
+          sse_encode_f_32(overlayAlpha, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 8,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_slice_rgba,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiRenderSliceWithLesionRgbaConstMeta,
+        argValues: [
+          path,
+          lesionMaskPath,
+          plane,
+          sliceIndex,
+          timepoint,
+          overlayAlpha,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRenderSliceWithLesionRgbaConstMeta =>
+      const TaskConstMeta(
+        debugName: "render_slice_with_lesion_rgba",
+        argNames: [
+          "path",
+          "lesionMaskPath",
+          "plane",
+          "sliceIndex",
+          "timepoint",
+          "overlayAlpha",
+        ],
+      );
+
+  @override
+  Future<LesionPipelineSummary> crateApiRunLesionAwarePipeline({
+    required String boldPath,
+    required String atlasPath,
+    String? lesionMaskPath,
+    String? atlasLabelsJsonPath,
+    String? wmMaskPath,
+    String? csfMaskPath,
+    String? confoundsTsvPath,
+    required double lowHz,
+    required double highHz,
+    required double fdThresholdMm,
+    required double maxDamagePct,
+    required int lesionDilateVoxels,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(boldPath, serializer);
+          sse_encode_String(atlasPath, serializer);
+          sse_encode_opt_String(lesionMaskPath, serializer);
+          sse_encode_opt_String(atlasLabelsJsonPath, serializer);
+          sse_encode_opt_String(wmMaskPath, serializer);
+          sse_encode_opt_String(csfMaskPath, serializer);
+          sse_encode_opt_String(confoundsTsvPath, serializer);
+          sse_encode_f_64(lowHz, serializer);
+          sse_encode_f_64(highHz, serializer);
+          sse_encode_f_64(fdThresholdMm, serializer);
+          sse_encode_f_64(maxDamagePct, serializer);
+          sse_encode_u_32(lesionDilateVoxels, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 9,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_lesion_pipeline_summary,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiRunLesionAwarePipelineConstMeta,
+        argValues: [
+          boldPath,
+          atlasPath,
+          lesionMaskPath,
+          atlasLabelsJsonPath,
+          wmMaskPath,
+          csfMaskPath,
+          confoundsTsvPath,
+          lowHz,
+          highHz,
+          fdThresholdMm,
+          maxDamagePct,
+          lesionDilateVoxels,
+        ],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRunLesionAwarePipelineConstMeta =>
+      const TaskConstMeta(
+        debugName: "run_lesion_aware_pipeline",
+        argNames: [
+          "boldPath",
+          "atlasPath",
+          "lesionMaskPath",
+          "atlasLabelsJsonPath",
+          "wmMaskPath",
+          "csfMaskPath",
+          "confoundsTsvPath",
+          "lowHz",
+          "highHz",
+          "fdThresholdMm",
+          "maxDamagePct",
+          "lesionDilateVoxels",
+        ],
+      );
 
   @override
   Future<DenoisePipelineSummary> crateApiRunRoiDenoisePipeline({
@@ -226,7 +641,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 10,
             port: port_,
           );
         },
@@ -336,6 +751,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LesionPipelineSummary dco_decode_lesion_pipeline_summary(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 15)
+      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    return LesionPipelineSummary(
+      nTimepoints: dco_decode_u_32(arr[0]),
+      nRois: dco_decode_u_32(arr[1]),
+      nIntactRois: dco_decode_u_32(arr[2]),
+      nExcludedRois: dco_decode_u_32(arr[3]),
+      trSec: dco_decode_f_64(arr[4]),
+      usedMmap: dco_decode_bool(arr[5]),
+      lesionVolumeMl: dco_decode_f_64(arr[6]),
+      dominantHemisphere: dco_decode_String(arr[7]),
+      globalEfficiency: dco_decode_f_64(arr[8]),
+      meanNodeStrength: dco_decode_f_64(arr[9]),
+      meanHomotopicFc: dco_decode_f_64(arr[10]),
+      lateralityIndex: dco_decode_f_64(arr[11]),
+      lesionSeedMeanAbsR: dco_decode_f_64(arr[12]),
+      meanAbsFc: dco_decode_f_64(arr[13]),
+      totalMs: dco_decode_f_64(arr[14]),
+    );
+  }
+
+  @protected
+  LesionSummaryDto dco_decode_lesion_summary_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return LesionSummaryDto(
+      voxelCount: dco_decode_u_64(arr[0]),
+      volumeMl: dco_decode_f_64(arr[1]),
+      leftVoxels: dco_decode_u_64(arr[2]),
+      rightVoxels: dco_decode_u_64(arr[3]),
+      dominantHemisphere: dco_decode_String(arr[4]),
+    );
+  }
+
+  @protected
   Float32List dco_decode_list_prim_f_32_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Float32List;
@@ -393,6 +848,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int dco_decode_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
+  }
+
+  @protected
+  BigInt dco_decode_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dcoDecodeU64(raw);
   }
 
   @protected
@@ -496,6 +957,62 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  LesionPipelineSummary sse_decode_lesion_pipeline_summary(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_nTimepoints = sse_decode_u_32(deserializer);
+    var var_nRois = sse_decode_u_32(deserializer);
+    var var_nIntactRois = sse_decode_u_32(deserializer);
+    var var_nExcludedRois = sse_decode_u_32(deserializer);
+    var var_trSec = sse_decode_f_64(deserializer);
+    var var_usedMmap = sse_decode_bool(deserializer);
+    var var_lesionVolumeMl = sse_decode_f_64(deserializer);
+    var var_dominantHemisphere = sse_decode_String(deserializer);
+    var var_globalEfficiency = sse_decode_f_64(deserializer);
+    var var_meanNodeStrength = sse_decode_f_64(deserializer);
+    var var_meanHomotopicFc = sse_decode_f_64(deserializer);
+    var var_lateralityIndex = sse_decode_f_64(deserializer);
+    var var_lesionSeedMeanAbsR = sse_decode_f_64(deserializer);
+    var var_meanAbsFc = sse_decode_f_64(deserializer);
+    var var_totalMs = sse_decode_f_64(deserializer);
+    return LesionPipelineSummary(
+      nTimepoints: var_nTimepoints,
+      nRois: var_nRois,
+      nIntactRois: var_nIntactRois,
+      nExcludedRois: var_nExcludedRois,
+      trSec: var_trSec,
+      usedMmap: var_usedMmap,
+      lesionVolumeMl: var_lesionVolumeMl,
+      dominantHemisphere: var_dominantHemisphere,
+      globalEfficiency: var_globalEfficiency,
+      meanNodeStrength: var_meanNodeStrength,
+      meanHomotopicFc: var_meanHomotopicFc,
+      lateralityIndex: var_lateralityIndex,
+      lesionSeedMeanAbsR: var_lesionSeedMeanAbsR,
+      meanAbsFc: var_meanAbsFc,
+      totalMs: var_totalMs,
+    );
+  }
+
+  @protected
+  LesionSummaryDto sse_decode_lesion_summary_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_voxelCount = sse_decode_u_64(deserializer);
+    var var_volumeMl = sse_decode_f_64(deserializer);
+    var var_leftVoxels = sse_decode_u_64(deserializer);
+    var var_rightVoxels = sse_decode_u_64(deserializer);
+    var var_dominantHemisphere = sse_decode_String(deserializer);
+    return LesionSummaryDto(
+      voxelCount: var_voxelCount,
+      volumeMl: var_volumeMl,
+      leftVoxels: var_leftVoxels,
+      rightVoxels: var_rightVoxels,
+      dominantHemisphere: var_dominantHemisphere,
+    );
+  }
+
+  @protected
   Float32List sse_decode_list_prim_f_32_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
@@ -567,6 +1084,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int sse_decode_u_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint32();
+  }
+
+  @protected
+  BigInt sse_decode_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return deserializer.buffer.getBigUint64();
   }
 
   @protected
@@ -659,6 +1182,42 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_lesion_pipeline_summary(
+    LesionPipelineSummary self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.nTimepoints, serializer);
+    sse_encode_u_32(self.nRois, serializer);
+    sse_encode_u_32(self.nIntactRois, serializer);
+    sse_encode_u_32(self.nExcludedRois, serializer);
+    sse_encode_f_64(self.trSec, serializer);
+    sse_encode_bool(self.usedMmap, serializer);
+    sse_encode_f_64(self.lesionVolumeMl, serializer);
+    sse_encode_String(self.dominantHemisphere, serializer);
+    sse_encode_f_64(self.globalEfficiency, serializer);
+    sse_encode_f_64(self.meanNodeStrength, serializer);
+    sse_encode_f_64(self.meanHomotopicFc, serializer);
+    sse_encode_f_64(self.lateralityIndex, serializer);
+    sse_encode_f_64(self.lesionSeedMeanAbsR, serializer);
+    sse_encode_f_64(self.meanAbsFc, serializer);
+    sse_encode_f_64(self.totalMs, serializer);
+  }
+
+  @protected
+  void sse_encode_lesion_summary_dto(
+    LesionSummaryDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self.voxelCount, serializer);
+    sse_encode_f_64(self.volumeMl, serializer);
+    sse_encode_u_64(self.leftVoxels, serializer);
+    sse_encode_u_64(self.rightVoxels, serializer);
+    sse_encode_String(self.dominantHemisphere, serializer);
+  }
+
+  @protected
   void sse_encode_list_prim_f_32_strict(
     Float32List self,
     SseSerializer serializer,
@@ -725,6 +1284,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_u_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint32(self);
+  }
+
+  @protected
+  void sse_encode_u_64(BigInt self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    serializer.buffer.putBigUint64(self);
   }
 
   @protected

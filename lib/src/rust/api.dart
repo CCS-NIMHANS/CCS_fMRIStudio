@@ -6,6 +6,8 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+// These functions are ignored because they are not marked as `pub`: `load_or_init_mask`, `to_lesion_dto`
+
 Future<EngineInfo> engineInfo() => RustLib.instance.api.crateApiEngineInfo();
 
 Future<NiftiHeaderSummary> inspectNifti({required String path}) =>
@@ -21,6 +23,88 @@ Future<SliceRgba> renderSliceRgba({
   plane: plane,
   sliceIndex: sliceIndex,
   timepoint: timepoint,
+);
+
+Future<SliceRgba> renderSliceWithLesionRgba({
+  required String path,
+  String? lesionMaskPath,
+  required String plane,
+  required int sliceIndex,
+  required int timepoint,
+  required double overlayAlpha,
+}) => RustLib.instance.api.crateApiRenderSliceWithLesionRgba(
+  path: path,
+  lesionMaskPath: lesionMaskPath,
+  plane: plane,
+  sliceIndex: sliceIndex,
+  timepoint: timepoint,
+  overlayAlpha: overlayAlpha,
+);
+
+Future<LesionSummaryDto> autoSegmentLesionAsymmetry({
+  required String t1Path,
+  String? flairPath,
+  required double zThreshold,
+  required String outMaskPath,
+}) => RustLib.instance.api.crateApiAutoSegmentLesionAsymmetry(
+  t1Path: t1Path,
+  flairPath: flairPath,
+  zThreshold: zThreshold,
+  outMaskPath: outMaskPath,
+);
+
+Future<LesionSummaryDto> editLesionMaskMagicWand({
+  required String t1Path,
+  required String maskPath,
+  required int seedX,
+  required int seedY,
+  required int seedZ,
+  required double tolerance,
+  required String outMaskPath,
+}) => RustLib.instance.api.crateApiEditLesionMaskMagicWand(
+  t1Path: t1Path,
+  maskPath: maskPath,
+  seedX: seedX,
+  seedY: seedY,
+  seedZ: seedZ,
+  tolerance: tolerance,
+  outMaskPath: outMaskPath,
+);
+
+Future<LesionSummaryDto> editLesionMaskBrush({
+  required String maskPath,
+  required String refNiftiPath,
+  required int cx,
+  required int cy,
+  required int cz,
+  required double radiusVoxels,
+  required bool erase,
+  String? slicePlaneOnly,
+  required String outMaskPath,
+}) => RustLib.instance.api.crateApiEditLesionMaskBrush(
+  maskPath: maskPath,
+  refNiftiPath: refNiftiPath,
+  cx: cx,
+  cy: cy,
+  cz: cz,
+  radiusVoxels: radiusVoxels,
+  erase: erase,
+  slicePlaneOnly: slicePlaneOnly,
+  outMaskPath: outMaskPath,
+);
+
+Future<LesionSummaryDto> morphologyLesionMask({
+  required String maskPath,
+  required String refNiftiPath,
+  required String operation,
+  required int param,
+  required String outMaskPath,
+}) => RustLib.instance.api.crateApiMorphologyLesionMask(
+  maskPath: maskPath,
+  refNiftiPath: refNiftiPath,
+  operation: operation,
+  param: param,
+  outMaskPath: outMaskPath,
 );
 
 Future<DenoisePipelineSummary> runRoiDenoisePipeline({
@@ -41,6 +125,34 @@ Future<DenoisePipelineSummary> runRoiDenoisePipeline({
   lowHz: lowHz,
   highHz: highHz,
   fdThresholdMm: fdThresholdMm,
+);
+
+Future<LesionPipelineSummary> runLesionAwarePipeline({
+  required String boldPath,
+  required String atlasPath,
+  String? lesionMaskPath,
+  String? atlasLabelsJsonPath,
+  String? wmMaskPath,
+  String? csfMaskPath,
+  String? confoundsTsvPath,
+  required double lowHz,
+  required double highHz,
+  required double fdThresholdMm,
+  required double maxDamagePct,
+  required int lesionDilateVoxels,
+}) => RustLib.instance.api.crateApiRunLesionAwarePipeline(
+  boldPath: boldPath,
+  atlasPath: atlasPath,
+  lesionMaskPath: lesionMaskPath,
+  atlasLabelsJsonPath: atlasLabelsJsonPath,
+  wmMaskPath: wmMaskPath,
+  csfMaskPath: csfMaskPath,
+  confoundsTsvPath: confoundsTsvPath,
+  lowHz: lowHz,
+  highHz: highHz,
+  fdThresholdMm: fdThresholdMm,
+  maxDamagePct: maxDamagePct,
+  lesionDilateVoxels: lesionDilateVoxels,
 );
 
 class DenoisePipelineSummary {
@@ -124,6 +236,116 @@ class EngineInfo {
           name == other.name &&
           version == other.version &&
           simdThreads == other.simdThreads;
+}
+
+class LesionPipelineSummary {
+  final int nTimepoints;
+  final int nRois;
+  final int nIntactRois;
+  final int nExcludedRois;
+  final double trSec;
+  final bool usedMmap;
+  final double lesionVolumeMl;
+  final String dominantHemisphere;
+  final double globalEfficiency;
+  final double meanNodeStrength;
+  final double meanHomotopicFc;
+  final double lateralityIndex;
+  final double lesionSeedMeanAbsR;
+  final double meanAbsFc;
+  final double totalMs;
+
+  const LesionPipelineSummary({
+    required this.nTimepoints,
+    required this.nRois,
+    required this.nIntactRois,
+    required this.nExcludedRois,
+    required this.trSec,
+    required this.usedMmap,
+    required this.lesionVolumeMl,
+    required this.dominantHemisphere,
+    required this.globalEfficiency,
+    required this.meanNodeStrength,
+    required this.meanHomotopicFc,
+    required this.lateralityIndex,
+    required this.lesionSeedMeanAbsR,
+    required this.meanAbsFc,
+    required this.totalMs,
+  });
+
+  @override
+  int get hashCode =>
+      nTimepoints.hashCode ^
+      nRois.hashCode ^
+      nIntactRois.hashCode ^
+      nExcludedRois.hashCode ^
+      trSec.hashCode ^
+      usedMmap.hashCode ^
+      lesionVolumeMl.hashCode ^
+      dominantHemisphere.hashCode ^
+      globalEfficiency.hashCode ^
+      meanNodeStrength.hashCode ^
+      meanHomotopicFc.hashCode ^
+      lateralityIndex.hashCode ^
+      lesionSeedMeanAbsR.hashCode ^
+      meanAbsFc.hashCode ^
+      totalMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LesionPipelineSummary &&
+          runtimeType == other.runtimeType &&
+          nTimepoints == other.nTimepoints &&
+          nRois == other.nRois &&
+          nIntactRois == other.nIntactRois &&
+          nExcludedRois == other.nExcludedRois &&
+          trSec == other.trSec &&
+          usedMmap == other.usedMmap &&
+          lesionVolumeMl == other.lesionVolumeMl &&
+          dominantHemisphere == other.dominantHemisphere &&
+          globalEfficiency == other.globalEfficiency &&
+          meanNodeStrength == other.meanNodeStrength &&
+          meanHomotopicFc == other.meanHomotopicFc &&
+          lateralityIndex == other.lateralityIndex &&
+          lesionSeedMeanAbsR == other.lesionSeedMeanAbsR &&
+          meanAbsFc == other.meanAbsFc &&
+          totalMs == other.totalMs;
+}
+
+class LesionSummaryDto {
+  final BigInt voxelCount;
+  final double volumeMl;
+  final BigInt leftVoxels;
+  final BigInt rightVoxels;
+  final String dominantHemisphere;
+
+  const LesionSummaryDto({
+    required this.voxelCount,
+    required this.volumeMl,
+    required this.leftVoxels,
+    required this.rightVoxels,
+    required this.dominantHemisphere,
+  });
+
+  @override
+  int get hashCode =>
+      voxelCount.hashCode ^
+      volumeMl.hashCode ^
+      leftVoxels.hashCode ^
+      rightVoxels.hashCode ^
+      dominantHemisphere.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LesionSummaryDto &&
+          runtimeType == other.runtimeType &&
+          voxelCount == other.voxelCount &&
+          volumeMl == other.volumeMl &&
+          leftVoxels == other.leftVoxels &&
+          rightVoxels == other.rightVoxels &&
+          dominantHemisphere == other.dominantHemisphere;
 }
 
 class NiftiHeaderSummary {

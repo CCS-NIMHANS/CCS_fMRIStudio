@@ -247,7 +247,14 @@ pub fn simultaneous_denoise(
     let tol = s_max * 1e-10;
     let keep_cols: Vec<usize> = (0..u.ncols()).filter(|&i| s[i] > tol).collect();
 
-    let y_mat = Mat::<f64>::from_fn(nt, n_rois, |r, c| timeseries[[r, c]]);
+    let valid_rois: Vec<usize> = (0..n_rois)
+        .filter(|&c| timeseries.column(c).iter().all(|v| v.is_finite()))
+        .collect();
+    if valid_rois.is_empty() {
+        return Ok(Array2::from_elem((nt, n_rois), f64::NAN));
+    }
+
+    let y_mat = Mat::<f64>::from_fn(nt, valid_rois.len(), |r, c| timeseries[[r, valid_rois[c]]]);
     let y_clean_mat = if keep_cols.is_empty() {
         y_mat
     } else {
@@ -256,30 +263,27 @@ pub fn simultaneous_denoise(
         &y_mat - (&q * &qt_y)
     };
 
-    let mut out = Array2::<f64>::zeros((nt, n_rois));
-    for r in 0..nt {
-        for c in 0..n_rois {
-            out[[r, c]] = y_clean_mat[(r, c)];
+    let mut out = Array2::<f64>::from_elem((nt, n_rois), f64::NAN);
+    for (vc_idx, &roi_c) in valid_rois.iter().enumerate() {
+        for r in 0..nt {
+            out[[r, roi_c]] = y_clean_mat[(r, vc_idx)];
         }
-    }
-
-    if zscore_output {
-        for c in 0..n_rois {
+        if zscore_output {
             let mut sum = 0.0_f64;
             for r in 0..nt {
-                sum += out[[r, c]];
+                sum += out[[r, roi_c]];
             }
             let mean = sum / (nt as f64);
             let mut ss = 0.0_f64;
             for r in 0..nt {
-                let d = out[[r, c]] - mean;
-                out[[r, c]] = d;
+                let d = out[[r, roi_c]] - mean;
+                out[[r, roi_c]] = d;
                 ss += d * d;
             }
             let std = (ss / ((nt - 1) as f64)).sqrt();
             if std > 1e-12 {
                 for r in 0..nt {
-                    out[[r, c]] /= std;
+                    out[[r, roi_c]] /= std;
                 }
             }
         }

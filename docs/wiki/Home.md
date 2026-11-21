@@ -25,6 +25,7 @@ flowchart LR
 | [**3. Rust Denoising & Connectivity**](Rust-Denoising-and-Connectivity.md) | Parallel Schaefer parcellation, CONN-style WM/CSF aCompCor, simultaneous orthogonalized DCT bandpass + scrubbing projection, static/dynamic FC, and RGBA slice rendering |
 | [**4. Benchmarks & Validation**](Benchmarks-and-Validation.md) | Verified 3-trial `Patient_01/pre` timings, `13.66x` end-to-end / `157.91x` parcellation speedups, `1.83x` peak RSS reduction, and `r > 0.99999999999` parity vs. `nilearn` |
 | [**5. Building & Releasing (3 OSes)**](Building-and-Releasing.md) | Local macOS/Linux/Windows compilation, `flutter_rust_bridge_codegen`, GitHub Actions 3-OS release pipeline, and SHA-256 verification |
+| [**6. TBI & Stroke Lesion Workflows**](TBI-and-Stroke-Lesion-Workflows.md) | Auto-segmentation + Flutter 3D mask editor, CFM & Enantiomorphic registration, clinical templates, lesion-safe aCompCor, NaN-safe graph & LMM |
 
 ---
 

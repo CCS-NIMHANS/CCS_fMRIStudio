@@ -1,0 +1,45 @@
+{
+  "mni152_stereotaxic_reference": {
+    "shape_2mm": [99, 117, 95],
+    "zooms_mm": [2.0, 2.0, 2.0],
+    "origin_mm": [-98.0, -134.0, -72.0]
+  },
+  "templates": {
+    "mni152_adult": {
+      "display_name": "ICBM 152 Nonlinear 2009c Asymmetric (MNI152NLin2009cAsym, 2mm)",
+      "cohort": "Adult TBI / Mixed Ages (18-43y)",
+      "modality": "T1w",
+      "bundled_filename": "MNI152NLin2009cAsym_2mm.nii.gz",
+      "auto_fetch": "nilearn_mni152_2mm",
+      "recommended_lesion_mode": "cfm",
+      "notes": "Standard adult MNI stereotaxic space compatible with Schaefer, Yeo, and Harvard-Oxford atlases."
+    },
+    "older_adult_stroke": {
+      "display_name": "Rorden Clinical Toolbox Older-Adult T1/T2 Template (2mm MNI-aligned)",
+      "cohort": "Older Stroke / Vascular (mean age ~61-65y)",
+      "modality": "T1w",
+      "bundled_filename": "scct_older_adult_t1_2mm.nii.gz",
+      "auto_fetch": null,
+      "recommended_lesion_mode": "enantiomorphic",
+      "notes": "Matches age-related ventricular enlargement and cortical atrophy; avoids periventricular over-warping. Place MNI-aligned NIfTI in assets/templates/ or pass --custom-template."
+    },
+    "pediatric_nihpd": {
+      "display_name": "NIHPD 4.5-18.5y Age-Stratified Pediatric Template (MNI-aligned)",
+      "cohort": "Pediatric TBI / Stroke (4.5-18.5y)",
+      "modality": "T1w",
+      "bundled_filename": "nihpd_asym_pediatric_2mm.nii.gz",
+      "auto_fetch": null,
+      "recommended_lesion_mode": "cfm",
+      "notes": "Accounts for developmental head size, gray/white contrast, and myelination. Place MNI-aligned NIfTI in assets/templates/ or pass --custom-template."
+    },
+    "acute_ct_stroke": {
+      "display_name": "Rorden Age-Specific Acute Stroke CT Template (Hounsfield-scaled)",
+      "cohort": "CT-Only Acute Stroke",
+      "modality": "CT",
+      "bundled_filename": "scct_ct_template_2mm.nii.gz",
+      "auto_fetch": null,
+      "recommended_lesion_mode": "enantiomorphic",
+      "notes": "Hounsfield-scaled clinical CT template aligned to MNI stereotaxic space for sites without acute high-res T1w."
+    }
+  }
+}

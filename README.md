@@ -67,6 +67,10 @@ mkdir -p ~/CCS_fMRIStudio && tar -xzf ~/Downloads/CCSfMRIStudio-linux-x64.tar.gz
 - **Zero-Copy Memory-Mapped NIfTI & 60/120 FPS RGBA Slice Rendering:** Direct `memmap2` Fortran-order mapping for uncompressed native `f32` 4D volumes (`.nii`) plus `.nii.gz` fallback, BIDS `.json` sidecar `RepetitionTime` auto-detection, and 2nd–98th percentile orthogonal RGBA slice rendering.
 - **Native-Speed Parcellation, CONN-Style aCompCor & Simultaneous Denoising:** Parallel Rayon Schaefer-400 extraction (`28.20 ms` median), WM/CSF aCompCor PCA via `faer` thin SVD, and single-step orthogonalized DCT-II stopband bandpass + motion + FD scrubbing projection (`r > 0.99999999999` parity vs. `nilearn` cosine filtering).
 - **ANTsPy Single-Subject Preprocessing CLI:** Automated DICOM-to-BIDS conversion (`dcm2niix`), N4 bias correction, Atropos 3-class WM/CSF tissue segmentation, `antsRegistrationSyNQuick[s]` MNI152 2 mm registration, 4D rigid motion correction + Power FD `confounds.tsv`, and single-interpolation 4D MNI warp in **101.93 s** (~1.7 min) on a 24 GB MacBook Pro.
+- **TBI & Stroke Clinical Lesion Modules:**
+  - **Auto-Segment → Manual Polish UI:** Multi-contrast ONNX / midline-aligned hemispheric asymmetry segmentation (`lesion_segment.py` & `rust/src/lesion.rs`) paired with an interactive Flutter 3D mask editor (40% red ortho overlay, 3D Magic Wand flood-fill, spherical brush/eraser, `Fill Holes`, `Remove Islands <10`, `Dilate +1 Vox`).
+  - **Lesion-Safe Spatial Normalization & Age-Matched Templates:** `ANTsPy` Cost Function Masking (`--lesion-mode cfm`), Enantiomorphic contralesional healing (`--lesion-mode enantiomorphic`, validated end-to-end on `Patient_01/pre` in **107.13 s**), and MNI-aligned cohort templates (`mni152_adult`, `older_adult_stroke`, `pediatric_nihpd`, `acute_ct_stroke`).
+  - **Lesion-Aware Connectivity & LMM Stats:** Subtract dilated lesion from WM/CSF aCompCor masks, exclude `>50%`-damaged Schaefer parcels as `NaN`, compute NaN-safe graph global efficiency / modularity, homotopic FC, laterality indices, lesion-network mapping, and `statsmodels` group LMM (`group_lmm.py`) with `total_lesion_volume_ml` and `roi_percent_damage` covariates.
 
 ---
 
@@ -130,6 +134,7 @@ Evaluated on clinical 3T resting-state fMRI + T1w DICOM data (`Patient_01/pre`, 
 | [**3. Rust Denoising & Connectivity**](docs/wiki/Rust-Denoising-and-Connectivity.md) | Schaefer parcellation, aCompCor, simultaneous orthogonalized DCT projection, FC/dFC, RGBA slices |
 | [**4. Benchmarks & Validation**](docs/wiki/Benchmarks-and-Validation.md) | Full `Patient_01/pre` preprocessing report, 3-trial min/median/max benchmarks, and parity tests |
 | [**5. Building & Releasing (3 OSes)**](docs/wiki/Building-and-Releasing.md) | Local builds, `flutter_rust_bridge_codegen`, and 3-OS GitHub Actions release packaging |
+| [**6. TBI & Stroke Lesion Workflows**](docs/wiki/TBI-and-Stroke-Lesion-Workflows.md) | Auto-segmentation, Flutter 3D mask editor, CFM/Enantiomorphic registration, clinical templates & LMM |
 
 ---
 

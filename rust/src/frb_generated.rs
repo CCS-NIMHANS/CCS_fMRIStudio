@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1368812239;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1668885918;
 
 // Section: executor
 
@@ -47,6 +47,151 @@ flutter_rust_bridge::frb_generated_default_handler!();
 
 // Section: wire_funcs
 
+fn wire__crate__api__auto_segment_lesion_asymmetry_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "auto_segment_lesion_asymmetry",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_t1_path = <String>::sse_decode(&mut deserializer);
+            let api_flair_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_z_threshold = <f32>::sse_decode(&mut deserializer);
+            let api_out_mask_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::auto_segment_lesion_asymmetry(
+                            api_t1_path,
+                            api_flair_path,
+                            api_z_threshold,
+                            api_out_mask_path,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__edit_lesion_mask_brush_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "edit_lesion_mask_brush",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_mask_path = <String>::sse_decode(&mut deserializer);
+            let api_ref_nifti_path = <String>::sse_decode(&mut deserializer);
+            let api_cx = <u32>::sse_decode(&mut deserializer);
+            let api_cy = <u32>::sse_decode(&mut deserializer);
+            let api_cz = <u32>::sse_decode(&mut deserializer);
+            let api_radius_voxels = <f32>::sse_decode(&mut deserializer);
+            let api_erase = <bool>::sse_decode(&mut deserializer);
+            let api_slice_plane_only = <Option<String>>::sse_decode(&mut deserializer);
+            let api_out_mask_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::edit_lesion_mask_brush(
+                            api_mask_path,
+                            api_ref_nifti_path,
+                            api_cx,
+                            api_cy,
+                            api_cz,
+                            api_radius_voxels,
+                            api_erase,
+                            api_slice_plane_only,
+                            api_out_mask_path,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__edit_lesion_mask_magic_wand_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "edit_lesion_mask_magic_wand",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_t1_path = <String>::sse_decode(&mut deserializer);
+            let api_mask_path = <String>::sse_decode(&mut deserializer);
+            let api_seed_x = <u32>::sse_decode(&mut deserializer);
+            let api_seed_y = <u32>::sse_decode(&mut deserializer);
+            let api_seed_z = <u32>::sse_decode(&mut deserializer);
+            let api_tolerance = <f32>::sse_decode(&mut deserializer);
+            let api_out_mask_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::edit_lesion_mask_magic_wand(
+                            api_t1_path,
+                            api_mask_path,
+                            api_seed_x,
+                            api_seed_y,
+                            api_seed_z,
+                            api_tolerance,
+                            api_out_mask_path,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__engine_info_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -114,6 +259,51 @@ fn wire__crate__api__inspect_nifti_impl(
         },
     )
 }
+fn wire__crate__api__morphology_lesion_mask_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "morphology_lesion_mask",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_mask_path = <String>::sse_decode(&mut deserializer);
+            let api_ref_nifti_path = <String>::sse_decode(&mut deserializer);
+            let api_operation = <String>::sse_decode(&mut deserializer);
+            let api_param = <u32>::sse_decode(&mut deserializer);
+            let api_out_mask_path = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::morphology_lesion_mask(
+                            api_mask_path,
+                            api_ref_nifti_path,
+                            api_operation,
+                            api_param,
+                            api_out_mask_path,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__render_slice_rgba_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -149,6 +339,112 @@ fn wire__crate__api__render_slice_rgba_impl(
                             api_plane,
                             api_slice_index,
                             api_timepoint,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__render_slice_with_lesion_rgba_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "render_slice_with_lesion_rgba",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_path = <String>::sse_decode(&mut deserializer);
+            let api_lesion_mask_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_plane = <String>::sse_decode(&mut deserializer);
+            let api_slice_index = <u32>::sse_decode(&mut deserializer);
+            let api_timepoint = <u32>::sse_decode(&mut deserializer);
+            let api_overlay_alpha = <f32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::render_slice_with_lesion_rgba(
+                            api_path,
+                            api_lesion_mask_path,
+                            api_plane,
+                            api_slice_index,
+                            api_timepoint,
+                            api_overlay_alpha,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__run_lesion_aware_pipeline_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "run_lesion_aware_pipeline",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_bold_path = <String>::sse_decode(&mut deserializer);
+            let api_atlas_path = <String>::sse_decode(&mut deserializer);
+            let api_lesion_mask_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_atlas_labels_json_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_wm_mask_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_csf_mask_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_confounds_tsv_path = <Option<String>>::sse_decode(&mut deserializer);
+            let api_low_hz = <f64>::sse_decode(&mut deserializer);
+            let api_high_hz = <f64>::sse_decode(&mut deserializer);
+            let api_fd_threshold_mm = <f64>::sse_decode(&mut deserializer);
+            let api_max_damage_pct = <f64>::sse_decode(&mut deserializer);
+            let api_lesion_dilate_voxels = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::run_lesion_aware_pipeline(
+                            api_bold_path,
+                            api_atlas_path,
+                            api_lesion_mask_path,
+                            api_atlas_labels_json_path,
+                            api_wm_mask_path,
+                            api_csf_mask_path,
+                            api_confounds_tsv_path,
+                            api_low_hz,
+                            api_high_hz,
+                            api_fd_threshold_mm,
+                            api_max_damage_pct,
+                            api_lesion_dilate_voxels,
                         )?;
                         std::result::Result::Ok(output_ok)
                     })(),
@@ -299,6 +595,62 @@ impl SseDecode for i16 {
     }
 }
 
+impl SseDecode for crate::api::LesionPipelineSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_nTimepoints = <u32>::sse_decode(deserializer);
+        let mut var_nRois = <u32>::sse_decode(deserializer);
+        let mut var_nIntactRois = <u32>::sse_decode(deserializer);
+        let mut var_nExcludedRois = <u32>::sse_decode(deserializer);
+        let mut var_trSec = <f64>::sse_decode(deserializer);
+        let mut var_usedMmap = <bool>::sse_decode(deserializer);
+        let mut var_lesionVolumeMl = <f64>::sse_decode(deserializer);
+        let mut var_dominantHemisphere = <String>::sse_decode(deserializer);
+        let mut var_globalEfficiency = <f64>::sse_decode(deserializer);
+        let mut var_meanNodeStrength = <f64>::sse_decode(deserializer);
+        let mut var_meanHomotopicFc = <f64>::sse_decode(deserializer);
+        let mut var_lateralityIndex = <f64>::sse_decode(deserializer);
+        let mut var_lesionSeedMeanAbsR = <f64>::sse_decode(deserializer);
+        let mut var_meanAbsFc = <f64>::sse_decode(deserializer);
+        let mut var_totalMs = <f64>::sse_decode(deserializer);
+        return crate::api::LesionPipelineSummary {
+            n_timepoints: var_nTimepoints,
+            n_rois: var_nRois,
+            n_intact_rois: var_nIntactRois,
+            n_excluded_rois: var_nExcludedRois,
+            tr_sec: var_trSec,
+            used_mmap: var_usedMmap,
+            lesion_volume_ml: var_lesionVolumeMl,
+            dominant_hemisphere: var_dominantHemisphere,
+            global_efficiency: var_globalEfficiency,
+            mean_node_strength: var_meanNodeStrength,
+            mean_homotopic_fc: var_meanHomotopicFc,
+            laterality_index: var_lateralityIndex,
+            lesion_seed_mean_abs_r: var_lesionSeedMeanAbsR,
+            mean_abs_fc: var_meanAbsFc,
+            total_ms: var_totalMs,
+        };
+    }
+}
+
+impl SseDecode for crate::api::LesionSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_voxelCount = <u64>::sse_decode(deserializer);
+        let mut var_volumeMl = <f64>::sse_decode(deserializer);
+        let mut var_leftVoxels = <u64>::sse_decode(deserializer);
+        let mut var_rightVoxels = <u64>::sse_decode(deserializer);
+        let mut var_dominantHemisphere = <String>::sse_decode(deserializer);
+        return crate::api::LesionSummaryDto {
+            voxel_count: var_voxelCount,
+            volume_ml: var_volumeMl,
+            left_voxels: var_leftVoxels,
+            right_voxels: var_rightVoxels,
+            dominant_hemisphere: var_dominantHemisphere,
+        };
+    }
+}
+
 impl SseDecode for Vec<f32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -389,6 +741,13 @@ impl SseDecode for u32 {
     }
 }
 
+impl SseDecode for u64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_u64::<NativeEndian>().unwrap()
+    }
+}
+
 impl SseDecode for u8 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -424,10 +783,20 @@ fn pde_ffi_dispatcher_primary_impl(
 ) {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        1 => wire__crate__api__engine_info_impl(port, ptr, rust_vec_len, data_len),
-        2 => wire__crate__api__inspect_nifti_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__render_slice_rgba_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__run_roi_denoise_pipeline_impl(port, ptr, rust_vec_len, data_len),
+        1 => {
+            wire__crate__api__auto_segment_lesion_asymmetry_impl(port, ptr, rust_vec_len, data_len)
+        }
+        2 => wire__crate__api__edit_lesion_mask_brush_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__edit_lesion_mask_magic_wand_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__engine_info_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__inspect_nifti_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__morphology_lesion_mask_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__render_slice_rgba_impl(port, ptr, rust_vec_len, data_len),
+        8 => {
+            wire__crate__api__render_slice_with_lesion_rgba_impl(port, ptr, rust_vec_len, data_len)
+        }
+        9 => wire__crate__api__run_lesion_aware_pipeline_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__run_roi_denoise_pipeline_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -490,6 +859,61 @@ impl flutter_rust_bridge::IntoDart for crate::api::EngineInfo {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::EngineInfo {}
 impl flutter_rust_bridge::IntoIntoDart<crate::api::EngineInfo> for crate::api::EngineInfo {
     fn into_into_dart(self) -> crate::api::EngineInfo {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::LesionPipelineSummary {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.n_timepoints.into_into_dart().into_dart(),
+            self.n_rois.into_into_dart().into_dart(),
+            self.n_intact_rois.into_into_dart().into_dart(),
+            self.n_excluded_rois.into_into_dart().into_dart(),
+            self.tr_sec.into_into_dart().into_dart(),
+            self.used_mmap.into_into_dart().into_dart(),
+            self.lesion_volume_ml.into_into_dart().into_dart(),
+            self.dominant_hemisphere.into_into_dart().into_dart(),
+            self.global_efficiency.into_into_dart().into_dart(),
+            self.mean_node_strength.into_into_dart().into_dart(),
+            self.mean_homotopic_fc.into_into_dart().into_dart(),
+            self.laterality_index.into_into_dart().into_dart(),
+            self.lesion_seed_mean_abs_r.into_into_dart().into_dart(),
+            self.mean_abs_fc.into_into_dart().into_dart(),
+            self.total_ms.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::LesionPipelineSummary
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::LesionPipelineSummary>
+    for crate::api::LesionPipelineSummary
+{
+    fn into_into_dart(self) -> crate::api::LesionPipelineSummary {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::LesionSummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.voxel_count.into_into_dart().into_dart(),
+            self.volume_ml.into_into_dart().into_dart(),
+            self.left_voxels.into_into_dart().into_dart(),
+            self.right_voxels.into_into_dart().into_dart(),
+            self.dominant_hemisphere.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::LesionSummaryDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::LesionSummaryDto>
+    for crate::api::LesionSummaryDto
+{
+    fn into_into_dart(self) -> crate::api::LesionSummaryDto {
         self
     }
 }
@@ -605,6 +1029,38 @@ impl SseEncode for i16 {
     }
 }
 
+impl SseEncode for crate::api::LesionPipelineSummary {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.n_timepoints, serializer);
+        <u32>::sse_encode(self.n_rois, serializer);
+        <u32>::sse_encode(self.n_intact_rois, serializer);
+        <u32>::sse_encode(self.n_excluded_rois, serializer);
+        <f64>::sse_encode(self.tr_sec, serializer);
+        <bool>::sse_encode(self.used_mmap, serializer);
+        <f64>::sse_encode(self.lesion_volume_ml, serializer);
+        <String>::sse_encode(self.dominant_hemisphere, serializer);
+        <f64>::sse_encode(self.global_efficiency, serializer);
+        <f64>::sse_encode(self.mean_node_strength, serializer);
+        <f64>::sse_encode(self.mean_homotopic_fc, serializer);
+        <f64>::sse_encode(self.laterality_index, serializer);
+        <f64>::sse_encode(self.lesion_seed_mean_abs_r, serializer);
+        <f64>::sse_encode(self.mean_abs_fc, serializer);
+        <f64>::sse_encode(self.total_ms, serializer);
+    }
+}
+
+impl SseEncode for crate::api::LesionSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u64>::sse_encode(self.voxel_count, serializer);
+        <f64>::sse_encode(self.volume_ml, serializer);
+        <u64>::sse_encode(self.left_voxels, serializer);
+        <u64>::sse_encode(self.right_voxels, serializer);
+        <String>::sse_encode(self.dominant_hemisphere, serializer);
+    }
+}
+
 impl SseEncode for Vec<f32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -671,6 +1127,13 @@ impl SseEncode for u32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_u32::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for u64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_u64::<NativeEndian>(self).unwrap();
     }
 }
 
