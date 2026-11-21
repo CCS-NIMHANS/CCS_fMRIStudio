@@ -1,6 +1,6 @@
 [project]
 name = "ccs-fmri-sidecar"
-version = "0.1.0"
+version = "0.1.1"
 description = "Embedded Python scientific sidecar for CCS_fMRIStudio (ANTsPy, DIPY, nilearn, statsmodels)"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"

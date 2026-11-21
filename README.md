@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <b>Current version: 0.1.0</b> ·
+  <b>Current version: 0.1.1</b> ·
   <a href="docs/wiki/Home.md"><b>Visual Wiki</b></a> ·
   <a href="CHANGELOG.md"><b>Release Notes</b></a> ·
   <a href="docs/wiki/Benchmarks-and-Validation.md"><b>Benchmarks &amp; Validation</b></a> ·
@@ -61,7 +61,14 @@ mkdir -p ~/CCS_fMRIStudio && tar -xzf ~/Downloads/CCSfMRIStudio-linux-x64.tar.gz
 
 ---
 
-## ✨ What's New in v0.1.0
+## ✨ What's New in v0.1.1
+
+- **Interactive Native File & Folder Pickers + Auto-Detection:** Every path field now has a native OS **Browse** picker (`file_picker`), plus 1-click **Open Folder** / **Browse Subject Folder** auto-discovery that automatically locates T1w, FLAIR, BOLD, `preproc/` derivatives, WM/CSF masks, Schaefer-400 atlases, `confounds.tsv`, and lesion masks with zero hardcoded developer paths.
+- **Guided 4-Step Clinical Workflow:** Intuitive sidebar (`1. Import` → `2. Preprocess` → `3. Lesion` → `4. Denoise`) wired directly to DICOM-to-BIDS conversion, lesion-safe `ANTsPy` preprocessing, interactive 3D lesion segmentation/editing, and Rust slice/timepoint visualization & denoising.
+- **In-App GitHub Releases Updater:** Built-in **Updates** dialog checks `CCS-NIMHANS/CCS_fMRIStudio` Releases, verifies `SHA256SUMS.txt`, and supports one-click macOS `.app` update & relaunch (plus Windows/Linux bundle download & reveal), matching `CCS_EEGStudio`.
+
+<details>
+<summary>Previous Release: What's New in v0.1.0</summary>
 
 - **Hybrid Flutter + Rust Core + Embedded Python Sidecar:** Cross-platform desktop UI bridged over zero-copy `flutter_rust_bridge` v2 (`libccs_fmri_core`) alongside a relocatable `uv`-managed Python scientific sidecar (`antspyx`, `nilearn`, `nibabel`, `scikit-learn`, `statsmodels`) — bypassing WSL, Docker, FSL, and AFNI dependencies.
 - **Zero-Copy Memory-Mapped NIfTI & 60/120 FPS RGBA Slice Rendering:** Direct `memmap2` Fortran-order mapping for uncompressed native `f32` 4D volumes (`.nii`) plus `.nii.gz` fallback, BIDS `.json` sidecar `RepetitionTime` auto-detection, and 2nd–98th percentile orthogonal RGBA slice rendering.
@@ -71,6 +78,8 @@ mkdir -p ~/CCS_fMRIStudio && tar -xzf ~/Downloads/CCSfMRIStudio-linux-x64.tar.gz
   - **Auto-Segment → Manual Polish UI:** Multi-contrast ONNX / midline-aligned hemispheric asymmetry segmentation (`lesion_segment.py` & `rust/src/lesion.rs`) paired with an interactive Flutter 3D mask editor (40% red ortho overlay, 3D Magic Wand flood-fill, spherical brush/eraser, `Fill Holes`, `Remove Islands <10`, `Dilate +1 Vox`).
   - **Lesion-Safe Spatial Normalization & Age-Matched Templates:** `ANTsPy` Cost Function Masking (`--lesion-mode cfm`), Enantiomorphic contralesional healing (`--lesion-mode enantiomorphic`, validated end-to-end on `Patient_01/pre` in **107.13 s**), and MNI-aligned cohort templates (`mni152_adult`, `older_adult_stroke`, `pediatric_nihpd`, `acute_ct_stroke`).
   - **Lesion-Aware Connectivity & LMM Stats:** Subtract dilated lesion from WM/CSF aCompCor masks, exclude `>50%`-damaged Schaefer parcels as `NaN`, compute NaN-safe graph global efficiency / modularity, homotopic FC, laterality indices, lesion-network mapping, and `statsmodels` group LMM (`group_lmm.py`) with `total_lesion_volume_ml` and `roi_percent_damage` covariates.
+
+</details>
 
 ---
 

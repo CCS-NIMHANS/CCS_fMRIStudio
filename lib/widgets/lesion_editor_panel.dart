@@ -1,26 +1,27 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:ccs_fmri_studio/src/rust/api.dart' as rust_api;
+import 'package:ccs_fmri_studio/src/session_state.dart';
+import 'package:ccs_fmri_studio/widgets/path_picker_field.dart';
 
 class LesionEditorPanel extends StatefulWidget {
-  const LesionEditorPanel({super.key});
+  const LesionEditorPanel({super.key, required this.session});
+
+  final FmriSessionState session;
 
   @override
   State<LesionEditorPanel> createState() => _LesionEditorPanelState();
 }
 
 class _LesionEditorPanelState extends State<LesionEditorPanel> {
-  final _t1Controller = TextEditingController(
-    text: 'data_test_output/patient01_pre/preproc/t1w_mni.nii.gz',
-  );
-  final _flairController = TextEditingController();
-  final _maskController = TextEditingController(
-    text: 'data_test_output/patient01_pre/lesion_test/edited_lesion.nii',
-  );
+  late final TextEditingController _t1Controller;
+  late final TextEditingController _flairController;
+  late final TextEditingController _maskController;
 
-  String _toolMode = 'wand'; // 'navigate', 'wand', 'brush', 'erase'
+  String _toolMode = 'wand';
   double _zThreshold = 2.5;
   double _wandTolerance = 35.0;
   double _brushRadius = 2.0;
@@ -35,11 +36,37 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
   ui.Image? _coronalImg;
   ui.Image? _sagittalImg;
   rust_api.LesionSummaryDto? _lesionSummary;
-  String _status = 'Load a T1w volume to auto-segment or manually polish a 3D lesion mask.';
+  String _status =
+      'Browse a T1w volume to auto-segment or manually polish a 3D lesion mask.';
   bool _busy = false;
 
   @override
+  void initState() {
+    super.initState();
+    _t1Controller = TextEditingController();
+    _flairController = TextEditingController();
+    _maskController = TextEditingController();
+    _syncFromSession();
+    widget.session.addListener(_syncFromSession);
+  }
+
+  void _syncFromSession() {
+    final s = widget.session;
+    final preferredT1 = s.t1MniPath.isNotEmpty ? s.t1MniPath : s.rawT1Path;
+    if (_t1Controller.text != preferredT1 && preferredT1.isNotEmpty) {
+      _t1Controller.text = preferredT1;
+    }
+    if (_flairController.text != s.flairPath && s.flairPath.isNotEmpty) {
+      _flairController.text = s.flairPath;
+    }
+    if (_maskController.text != s.lesionMaskPath && s.lesionMaskPath.isNotEmpty) {
+      _maskController.text = s.lesionMaskPath;
+    }
+  }
+
+  @override
   void dispose() {
+    widget.session.removeListener(_syncFromSession);
     _t1Controller.dispose();
     _flairController.dispose();
     _maskController.dispose();
@@ -61,13 +88,29 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
     return c.future;
   }
 
+  String _ensureOutputMaskPath(String t1Path) {
+    var maskPath = _maskController.text.trim();
+    if (maskPath.isNotEmpty) return maskPath;
+    final t1File = File(t1Path);
+    maskPath =
+        '${t1File.parent.path}${Platform.pathSeparator}lesion_mask_edited.nii';
+    _maskController.text = maskPath;
+    widget.session.lesionMaskPath = maskPath;
+    widget.session.notifyChanged();
+    return maskPath;
+  }
+
   Future<void> _loadAndRefreshOrtho() async {
+    final t1Path = _t1Controller.text.trim();
+    if (t1Path.isEmpty) {
+      setState(() => _status = 'Please Browse and select a T1w NIfTI volume first.');
+      return;
+    }
     setState(() {
       _busy = true;
-      _status = 'Inspecting T1w & rendering synchronized orthogonal slices...';
+      _status = 'Inspecting T1w & rendering synchronized orthogonal slices…';
     });
     try {
-      final t1Path = _t1Controller.text.trim();
       final hdr = await rust_api.inspectNifti(path: t1Path);
       final nx = hdr.dims.isNotEmpty ? hdr.dims[0] : 99;
       final ny = hdr.dims.length > 1 ? hdr.dims[1] : 117;
@@ -79,7 +122,7 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
       await _refreshSlices();
       if (!mounted) return;
       setState(() {
-        _status = 'Ortho views ready ($nx x $ny x $nz). Tool: $_toolMode.';
+        _status = 'Ortho views ready ($nx × $ny × $nz). Active tool: $_toolMode.';
       });
     } catch (e) {
       if (!mounted) return;
@@ -91,11 +134,12 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
 
   Future<void> _refreshSlices() async {
     final t1Path = _t1Controller.text.trim();
+    if (t1Path.isEmpty) return;
     final maskPath = _maskController.text.trim();
     final slices = await Future.wait([
       rust_api.renderSliceWithLesionRgba(
         path: t1Path,
-        lesionMaskPath: maskPath,
+        lesionMaskPath: maskPath.isEmpty ? null : maskPath,
         plane: 'axial',
         sliceIndex: _cz,
         timepoint: 0,
@@ -103,7 +147,7 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
       ),
       rust_api.renderSliceWithLesionRgba(
         path: t1Path,
-        lesionMaskPath: maskPath,
+        lesionMaskPath: maskPath.isEmpty ? null : maskPath,
         plane: 'coronal',
         sliceIndex: _cy,
         timepoint: 0,
@@ -111,7 +155,7 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
       ),
       rust_api.renderSliceWithLesionRgba(
         path: t1Path,
-        lesionMaskPath: maskPath,
+        lesionMaskPath: maskPath.isEmpty ? null : maskPath,
         plane: 'sagittal',
         sliceIndex: _cx,
         timepoint: 0,
@@ -136,17 +180,23 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
   }
 
   Future<void> _autoSegment() async {
+    final t1Path = _t1Controller.text.trim();
+    if (t1Path.isEmpty) {
+      setState(() => _status = 'Please Browse and select a T1w volume first.');
+      return;
+    }
+    final outMask = _ensureOutputMaskPath(t1Path);
     setState(() {
       _busy = true;
-      _status = 'Computing hemispheric asymmetry lesion segmentation...';
+      _status = 'Computing hemispheric asymmetry lesion segmentation…';
     });
     try {
       final flair = _flairController.text.trim();
       final summary = await rust_api.autoSegmentLesionAsymmetry(
-        t1Path: _t1Controller.text.trim(),
+        t1Path: t1Path,
         flairPath: flair.isEmpty ? null : flair,
         zThreshold: _zThreshold,
-        outMaskPath: _maskController.text.trim(),
+        outMaskPath: outMask,
       );
       await _loadAndRefreshOrtho();
       if (!mounted) return;
@@ -164,15 +214,20 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
   }
 
   Future<void> _applyMorphology(String op, int param, String label) async {
+    final t1Path = _t1Controller.text.trim();
+    final maskPath = _maskController.text.trim();
+    if (t1Path.isEmpty || maskPath.isEmpty) {
+      setState(() => _status = 'Select both T1w and Lesion Mask files first.');
+      return;
+    }
     setState(() {
       _busy = true;
-      _status = 'Applying morphological $label...';
+      _status = 'Applying morphological $label…';
     });
     try {
-      final maskPath = _maskController.text.trim();
       final summary = await rust_api.morphologyLesionMask(
         maskPath: maskPath,
-        refNiftiPath: _t1Controller.text.trim(),
+        refNiftiPath: t1Path,
         operation: op,
         param: param,
         outMaskPath: maskPath,
@@ -199,6 +254,9 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
     ui.Image img,
   ) async {
     if (_busy) return;
+    final t1Path = _t1Controller.text.trim();
+    if (t1Path.isEmpty) return;
+
     final imgAspect = img.width / img.height;
     final boxAspect = boxSize.width / boxSize.height;
     double drawW;
@@ -222,7 +280,6 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
     int vx = _cx;
     int vy = _cy;
     int vz = _cz;
-    // Match Rust render_ortho_slice_with_lesion_rgba flipped row convention.
     switch (plane) {
       case 'axial':
         vx = px.clamp(0, _dims[0] - 1);
@@ -243,14 +300,13 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
 
     if (_toolMode == 'navigate') {
       await _refreshSlices();
-      setState(() => _status = 'Crosshair -> ($vx, $vy, $vz)');
+      setState(() => _status = 'Crosshair → ($vx, $vy, $vz)');
       return;
     }
 
+    final maskPath = _ensureOutputMaskPath(t1Path);
     setState(() => _busy = true);
     try {
-      final maskPath = _maskController.text.trim();
-      final t1Path = _t1Controller.text.trim();
       late final rust_api.LesionSummaryDto summary;
       if (_toolMode == 'wand') {
         summary = await rust_api.editLesionMaskMagicWand(
@@ -306,7 +362,8 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                     if (img == null) {
                       return const Center(
                         child: Text(
-                          'No slice loaded',
+                          'Browse T1w & click Load Views',
+                          textAlign: TextAlign.center,
                           style: TextStyle(color: Color(0xFF64748B)),
                         ),
                       );
@@ -344,7 +401,7 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            width: 390,
+            width: 420,
             child: SingleChildScrollView(
               child: Card(
                 color: const Color(0xFF1E293B),
@@ -354,32 +411,42 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       const Text(
-                        'TBI / Stroke Lesion Mask Editor',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                        'Step 3: TBI / Stroke Lesion Mask Editor',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: 12),
-                      TextField(
+                      PathPickerField(
                         controller: _t1Controller,
-                        decoration: const InputDecoration(
-                          labelText: 'T1w Volume (.nii / .nii.gz)',
-                          border: OutlineInputBorder(),
-                        ),
+                        label: 'T1w Volume (.nii / .nii.gz)',
+                        hint: 'Select T1w anatomical NIfTI',
+                        onPicked: (p) {
+                          widget.session.t1MniPath = p;
+                          widget.session.notifyChanged();
+                          _loadAndRefreshOrtho();
+                        },
                       ),
                       const SizedBox(height: 10),
-                      TextField(
+                      PathPickerField(
                         controller: _flairController,
-                        decoration: const InputDecoration(
-                          labelText: 'Optional FLAIR / T2w Volume',
-                          border: OutlineInputBorder(),
-                        ),
+                        label: 'Optional FLAIR / T2w Volume',
+                        hint: 'Optional contrast for edema/WMH',
+                        onPicked: (p) {
+                          widget.session.flairPath = p;
+                          widget.session.notifyChanged();
+                        },
                       ),
                       const SizedBox(height: 10),
-                      TextField(
+                      PathPickerField(
                         controller: _maskController,
-                        decoration: const InputDecoration(
-                          labelText: 'Output / Editable Lesion Mask (.nii)',
-                          border: OutlineInputBorder(),
-                        ),
+                        label: 'Lesion Mask File (.nii / .nii.gz)',
+                        hint: 'Auto-created beside T1w if left empty',
+                        onPicked: (p) {
+                          widget.session.lesionMaskPath = p;
+                          widget.session.notifyChanged();
+                        },
                       ),
                       const SizedBox(height: 12),
                       Row(
@@ -402,7 +469,9 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Text('Asymmetry Z-Threshold: ${_zThreshold.toStringAsFixed(1)}'),
+                      Text(
+                        'Asymmetry Z-Threshold: ${_zThreshold.toStringAsFixed(1)}',
+                      ),
                       Slider(
                         value: _zThreshold,
                         min: 1.5,
@@ -418,23 +487,31 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                       const SizedBox(height: 8),
                       SegmentedButton<String>(
                         segments: const [
-                          ButtonSegment(value: 'navigate', label: Text('Cross')),
+                          ButtonSegment(
+                            value: 'navigate',
+                            label: Text('Cross'),
+                          ),
                           ButtonSegment(value: 'wand', label: Text('Wand')),
                           ButtonSegment(value: 'brush', label: Text('Brush')),
                           ButtonSegment(value: 'erase', label: Text('Erase')),
                         ],
                         selected: {_toolMode},
-                        onSelectionChanged: (s) => setState(() => _toolMode = s.first),
+                        onSelectionChanged: (s) =>
+                            setState(() => _toolMode = s.first),
                       ),
                       const SizedBox(height: 8),
-                      Text('Magic Wand Tolerance: ${_wandTolerance.toStringAsFixed(0)}'),
+                      Text(
+                        'Magic Wand Tolerance: ${_wandTolerance.toStringAsFixed(0)}',
+                      ),
                       Slider(
                         value: _wandTolerance,
                         min: 5,
                         max: 250,
                         onChanged: (v) => setState(() => _wandTolerance = v),
                       ),
-                      Text('3D Brush Radius (vox): ${_brushRadius.toStringAsFixed(1)}'),
+                      Text(
+                        '3D Brush Radius (vox): ${_brushRadius.toStringAsFixed(1)}',
+                      ),
                       Slider(
                         value: _brushRadius,
                         min: 1.0,
@@ -465,20 +542,31 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                           OutlinedButton(
                             onPressed: _busy
                                 ? null
-                                : () => _applyMorphology('fill_holes', 0, 'Fill Holes'),
+                                : () => _applyMorphology(
+                                    'fill_holes',
+                                    0,
+                                    'Fill Holes',
+                                  ),
                             child: const Text('Fill Holes'),
                           ),
                           OutlinedButton(
                             onPressed: _busy
                                 ? null
                                 : () => _applyMorphology(
-                                    'remove_islands', 10, 'Remove Islands (<10)'),
+                                    'remove_islands',
+                                    10,
+                                    'Remove Islands (<10)',
+                                  ),
                             child: const Text('Remove Islands <10'),
                           ),
                           OutlinedButton(
                             onPressed: _busy
                                 ? null
-                                : () => _applyMorphology('dilate', 1, 'Dilate Rim (+1 vox)'),
+                                : () => _applyMorphology(
+                                    'dilate',
+                                    1,
+                                    'Dilate Rim (+1 vox)',
+                                  ),
                             child: const Text('Dilate +1 Vox'),
                           ),
                         ],
@@ -500,7 +588,10 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                           ),
                         ),
                       const SizedBox(height: 8),
-                      Text(_status, style: const TextStyle(color: Color(0xFF94A3B8))),
+                      Text(
+                        _status,
+                        style: const TextStyle(color: Color(0xFF94A3B8)),
+                      ),
                     ],
                   ),
                 ),
@@ -515,8 +606,16 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                   child: Row(
                     children: [
                       _buildViewport('Axial (Z=$_cz)', 'axial', _axialImg),
-                      _buildViewport('Coronal (Y=$_cy)', 'coronal', _coronalImg),
-                      _buildViewport('Sagittal (X=$_cx)', 'sagittal', _sagittalImg),
+                      _buildViewport(
+                        'Coronal (Y=$_cy)',
+                        'coronal',
+                        _coronalImg,
+                      ),
+                      _buildViewport(
+                        'Sagittal (X=$_cx)',
+                        'sagittal',
+                        _sagittalImg,
+                      ),
                     ],
                   ),
                 ),
@@ -524,13 +623,19 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                 Card(
                   color: const Color(0xFF1E293B),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     child: Row(
                       children: [
                         Text('Z: $_cz'),
                         Expanded(
                           child: Slider(
-                            value: _cz.toDouble().clamp(0, (_dims[2] - 1).toDouble()),
+                            value: _cz.toDouble().clamp(
+                              0,
+                              (_dims[2] - 1).toDouble(),
+                            ),
                             min: 0,
                             max: (_dims[2] - 1).toDouble().clamp(1, 512),
                             onChanged: (v) => setState(() => _cz = v.round()),
@@ -542,7 +647,10 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                         Text('Y: $_cy'),
                         Expanded(
                           child: Slider(
-                            value: _cy.toDouble().clamp(0, (_dims[1] - 1).toDouble()),
+                            value: _cy.toDouble().clamp(
+                              0,
+                              (_dims[1] - 1).toDouble(),
+                            ),
                             min: 0,
                             max: (_dims[1] - 1).toDouble().clamp(1, 512),
                             onChanged: (v) => setState(() => _cy = v.round()),
@@ -554,7 +662,10 @@ class _LesionEditorPanelState extends State<LesionEditorPanel> {
                         Text('X: $_cx'),
                         Expanded(
                           child: Slider(
-                            value: _cx.toDouble().clamp(0, (_dims[0] - 1).toDouble()),
+                            value: _cx.toDouble().clamp(
+                              0,
+                              (_dims[0] - 1).toDouble(),
+                            ),
                             min: 0,
                             max: (_dims[0] - 1).toDouble().clamp(1, 512),
                             onChanged: (v) => setState(() => _cx = v.round()),
