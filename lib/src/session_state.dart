@@ -106,9 +106,8 @@ class FmriSessionState extends ChangeNotifier {
   }
 
   static String basename(String path) {
-    final sep = Platform.pathSeparator;
-    final trimmed = path.endsWith(sep) ? path.substring(0, path.length - 1) : path;
-    final idx = trimmed.lastIndexOf(sep);
+    final trimmed = path.replaceFirst(RegExp(r'[/\\]+$'), '');
+    final idx = trimmed.lastIndexOf(RegExp(r'[/\\]'));
     return idx >= 0 ? trimmed.substring(idx + 1) : trimmed;
   }
 

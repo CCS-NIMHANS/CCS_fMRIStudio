@@ -56,19 +56,26 @@ void main() {
   test('FmriSessionState auto-detects DICOM series, .IMA file picks, and preproc folders', () {
     final tmp = Directory.systemTemp.createTempSync('ccs_fmri_scan_test_');
     addTearDown(() => tmp.deleteSync(recursive: true));
+    String p(List<String> parts) => parts.join(Platform.pathSeparator);
 
     // 1. Simulate Siemens Patient_01/pre DICOM folder structure
-    final preDir = Directory('${tmp.path}/Patient_01/pre')..createSync(recursive: true);
-    final boldDir = Directory('${preDir.path}/HEAD_EP2D_RS_FMRI_ADNI3_0023')..createSync();
-    final t1SagIsoDir = Directory('${preDir.path}/HEAD_T1_MPRAGE_SAG_P2_ISO_NEW_0011')..createSync();
-    final t1CorDir = Directory('${preDir.path}/HEAD_T1_MPRAGE_COR_0101')..createSync();
-    final t1TraDir = Directory('${preDir.path}/HEAD_T1_MPRAGE_TRA_0100')..createSync();
+    final preDir = Directory(p([tmp.path, 'Patient_01', 'pre']))
+      ..createSync(recursive: true);
+    final boldDir = Directory(p([preDir.path, 'HEAD_EP2D_RS_FMRI_ADNI3_0023']))
+      ..createSync();
+    final t1SagIsoDir = Directory(
+      p([preDir.path, 'HEAD_T1_MPRAGE_SAG_P2_ISO_NEW_0011']),
+    )..createSync();
+    final t1CorDir = Directory(p([preDir.path, 'HEAD_T1_MPRAGE_COR_0101']))
+      ..createSync();
+    final t1TraDir = Directory(p([preDir.path, 'HEAD_T1_MPRAGE_TRA_0100']))
+      ..createSync();
 
-    File('${boldDir.path}/img_0001.IMA').writeAsStringSync('stub');
-    File('${boldDir.path}/img_0002.IMA').writeAsStringSync('stub');
-    File('${t1SagIsoDir.path}/t1_0001.IMA').writeAsStringSync('stub');
-    File('${t1CorDir.path}/t1_0001.IMA').writeAsStringSync('stub');
-    File('${t1TraDir.path}/t1_0001.IMA').writeAsStringSync('stub');
+    File(p([boldDir.path, 'img_0001.IMA'])).writeAsStringSync('stub');
+    File(p([boldDir.path, 'img_0002.IMA'])).writeAsStringSync('stub');
+    File(p([t1SagIsoDir.path, 't1_0001.IMA'])).writeAsStringSync('stub');
+    File(p([t1CorDir.path, 't1_0001.IMA'])).writeAsStringSync('stub');
+    File(p([t1TraDir.path, 't1_0001.IMA'])).writeAsStringSync('stub');
 
     final session = FmriSessionState();
     final dicomScan = session.scanFolder(preDir.path);
@@ -81,25 +88,30 @@ void main() {
 
     // 2. Picking a single .IMA file automatically promotes to Patient_01/pre DICOM scan
     final sessionFromIma = FmriSessionState();
-    final imaScan = sessionFromIma.handlePickedFile('${boldDir.path}/img_0001.IMA');
+    final imaScan = sessionFromIma.handlePickedFile(
+      p([boldDir.path, 'img_0001.IMA']),
+    );
     expect(imaScan.kind, DetectedDatasetKind.rawDicom);
     expect(imaScan.rootFolder, preDir.path);
     expect(imaScan.dicomSeries.length, 4);
     expect(imaScan.notice, isNotNull);
 
     // 3. Scanning a folder containing preproc/ outputs detects preprocessed MNI files
-    final subjRoot = Directory('${tmp.path}/SubjectPreproc')..createSync();
-    final preprocDir = Directory('${subjRoot.path}/preproc')..createSync();
-    File('${preprocDir.path}/bold_mni.nii').writeAsStringSync('stub');
-    File('${preprocDir.path}/schaefer400_mni.nii.gz').writeAsStringSync('stub');
-    File('${preprocDir.path}/confounds.tsv').writeAsStringSync('stub');
+    final subjRoot = Directory(p([tmp.path, 'SubjectPreproc']))..createSync();
+    final preprocDir = Directory(p([subjRoot.path, 'preproc']))..createSync();
+    File(p([preprocDir.path, 'bold_mni.nii'])).writeAsStringSync('stub');
+    File(p([preprocDir.path, 'schaefer400_mni.nii.gz'])).writeAsStringSync('stub');
+    File(p([preprocDir.path, 'confounds.tsv'])).writeAsStringSync('stub');
 
     final preprocSession = FmriSessionState();
     final preprocScan = preprocSession.scanFolder(subjRoot.path);
     expect(preprocScan.kind, DetectedDatasetKind.preprocessed);
-    expect(preprocSession.boldMniPath, '${preprocDir.path}/bold_mni.nii');
-    expect(preprocSession.atlasPath, '${preprocDir.path}/schaefer400_mni.nii.gz');
-    expect(preprocSession.confoundsPath, '${preprocDir.path}/confounds.tsv');
+    expect(preprocSession.boldMniPath, p([preprocDir.path, 'bold_mni.nii']));
+    expect(
+      preprocSession.atlasPath,
+      p([preprocDir.path, 'schaefer400_mni.nii.gz']),
+    );
+    expect(preprocSession.confoundsPath, p([preprocDir.path, 'confounds.tsv']));
   });
 
   test('UpdateChecker compares versions and matches OS assets', () {
