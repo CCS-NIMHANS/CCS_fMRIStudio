@@ -60,7 +60,6 @@ class FmriSessionState extends ChangeNotifier {
 
   static const List<String> _bundledAssets = [
     'assets/templates/registry.json',
-    'assets/templates/MNI152NLin2009cAsym_2mm.nii.gz',
     'python_sidecar/pyproject.toml',
     'python_sidecar/README.md',
     'python_sidecar/uv.lock',
