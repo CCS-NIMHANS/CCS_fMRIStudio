@@ -9,7 +9,7 @@ import 'package:ccs_fmri_studio/src/update_checker.dart';
 
 void main() {
   testWidgets(
-    'Guided 4-step workflow, Open Patient Folder CTA, and Updates render cleanly',
+    '5-step pipeline header, labeled Step 4 sliders, and Step 5 dashboard render cleanly',
     (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1440, 900);
       tester.view.devicePixelRatio = 1.0;
@@ -18,19 +18,21 @@ void main() {
       await tester.pumpWidget(const CcsFmriStudioApp(enableRustProbe: false));
 
       expect(find.text('CCS fMRI Studio'), findsOneWidget);
+      expect(find.text('Pipeline Progress'), findsOneWidget);
       expect(find.text('Updates'), findsOneWidget);
       expect(find.text('Open Folder'), findsOneWidget);
 
-      expect(find.text('1. Import'), findsOneWidget);
-      expect(find.text('2. Preprocess'), findsOneWidget);
-      expect(find.text('3. Lesion'), findsOneWidget);
-      expect(find.text('4. Denoise'), findsOneWidget);
+      expect(find.text('1. Import'), findsWidgets);
+      expect(find.text('2. Preprocess'), findsWidgets);
+      expect(find.text('3. Lesion (Opt)'), findsOneWidget);
+      expect(find.text('4. Denoise'), findsWidgets);
+      expect(find.text('5. Results'), findsWidgets);
 
       expect(find.text('Open Your MRI Scan'), findsOneWidget);
       expect(find.text('Open Patient Folder'), findsOneWidget);
       expect(find.text('Open Single NIfTI File'), findsOneWidget);
 
-      await tester.tap(find.text('2. Preprocess'));
+      await tester.tap(find.text('2. Preprocess').last);
       await tester.pumpAndSettle();
       expect(
         find.text('Step 2: ANTsPy Spatial Normalization & Motion Correction'),
@@ -44,12 +46,23 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.text('4. Denoise'));
+      await tester.tap(find.text('4. Denoise').last);
       await tester.pumpAndSettle();
       expect(
-        find.text('Step 4: Lesion-Aware Rust Denoising & Connectivity'),
+        find.text('Step 4A: Preprocessed Inputs & Lesion Mode'),
         findsOneWidget,
       );
+      expect(find.text('Bandpass Low-Pass Cutoff'), findsOneWidget);
+      expect(find.text('Motion Scrubbing (FD Threshold)'), findsOneWidget);
+      expect(find.text('Max ROI Lesion Damage Exclusion'), findsOneWidget);
+
+      await tester.tap(find.text('5. Results').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Step 5: Results & Biomarkers Dashboard'),
+        findsOneWidget,
+      );
+      expect(find.text('Go to Step 4: Denoise & Compute →'), findsOneWidget);
     },
   );
 
@@ -102,6 +115,7 @@ void main() {
     File(p([preprocDir.path, 'bold_mni.nii'])).writeAsStringSync('stub');
     File(p([preprocDir.path, 'schaefer400_mni.nii.gz'])).writeAsStringSync('stub');
     File(p([preprocDir.path, 'confounds.tsv'])).writeAsStringSync('stub');
+    File(p([preprocDir.path, 't1w_n4.nii.gz'])).writeAsStringSync('stub');
 
     final preprocSession = FmriSessionState();
     final preprocScan = preprocSession.scanFolder(subjRoot.path);
@@ -112,10 +126,11 @@ void main() {
       p([preprocDir.path, 'schaefer400_mni.nii.gz']),
     );
     expect(preprocSession.confoundsPath, p([preprocDir.path, 'confounds.tsv']));
+    expect(preprocSession.rawT1Path, isEmpty);
   });
 
   test('UpdateChecker compares versions and matches OS assets', () {
-    expect(UpdateChecker.compareVersions('0.1.1', '0.1.0'), greaterThan(0));
+    expect(UpdateChecker.compareVersions('0.1.3', '0.1.2'), greaterThan(0));
     expect(UpdateChecker.compareVersions('0.1.0', '0.1.0'), equals(0));
     expect(UpdateChecker.compareVersions('0.1.0', '0.2.0'), lessThan(0));
 

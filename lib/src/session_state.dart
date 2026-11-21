@@ -56,7 +56,7 @@ class FolderScanResult {
 }
 
 class FmriSessionState extends ChangeNotifier {
-  static const String bundleVersion = '0.1.2';
+  static const String bundleVersion = '0.1.3';
 
   static const List<String> _bundledAssets = [
     'assets/templates/registry.json',
@@ -89,9 +89,31 @@ class FmriSessionState extends ChangeNotifier {
   String csfMaskPath = '';
   String confoundsPath = '';
   String lesionMaskPath = '';
+  String resultsDir = '';
 
   String? sidecarDirOverride;
   FolderScanResult? lastScan;
+
+  void reset() {
+    t1DicomDir = '';
+    boldDicomDir = '';
+    dicomOutDir = '';
+    rawT1Path = '';
+    rawBoldPath = '';
+    flairPath = '';
+    preprocOutDir = '';
+    t1MniPath = '';
+    boldMniPath = '';
+    atlasPath = '';
+    labelsJsonPath = '';
+    wmMaskPath = '';
+    csfMaskPath = '';
+    confoundsPath = '';
+    lesionMaskPath = '';
+    resultsDir = '';
+    lastScan = null;
+    notifyListeners();
+  }
 
   static bool isNiftiFile(String path) {
     final lower = path.toLowerCase();
@@ -155,7 +177,11 @@ class FmriSessionState extends ChangeNotifier {
       return null;
     }
 
-    String? pickByPattern(RegExp pattern, {bool excludeMni = false}) {
+    String? pickByPattern(
+      RegExp pattern, {
+      bool excludeMni = false,
+      bool excludeDerived = false,
+    }) {
       for (final d in candidateDirs) {
         List<FileSystemEntity> entries;
         try {
@@ -171,6 +197,13 @@ class FmriSessionState extends ChangeNotifier {
           final lower = name.toLowerCase();
           if (!isNiftiFile(lower)) continue;
           if (excludeMni && lower.contains('mni')) continue;
+          if (excludeDerived &&
+              (lower.contains('_n4') ||
+                  lower.contains('mask') ||
+                  lower.contains('schaefer') ||
+                  lower.contains('lesion'))) {
+            continue;
+          }
           if (pattern.hasMatch(lower)) matches.add(e.path);
         }
         if (matches.isNotEmpty) {
@@ -232,13 +265,21 @@ class FmriSessionState extends ChangeNotifier {
 
     // 2. Raw / converted NIfTI files (BIDS or flat folder)
     final rawT1 = pickExact(['t1w.nii.gz', 't1w.nii']) ??
-        pickByPattern(RegExp(r'(t1w|mprage|_t1\b)'), excludeMni: true);
+        pickByPattern(
+          RegExp(r'(t1w|mprage|_t1\b)'),
+          excludeMni: true,
+          excludeDerived: true,
+        );
     if (rawT1 != null) {
       rawT1Path = rawT1;
       foundLabels.add('t1w');
     }
     final rawBold = pickExact(['bold.nii.gz', 'bold.nii']) ??
-        pickByPattern(RegExp(r'(bold|fmri|rest|ep2d)'), excludeMni: true);
+        pickByPattern(
+          RegExp(r'(bold|fmri|rest|ep2d)'),
+          excludeMni: true,
+          excludeDerived: true,
+        );
     if (rawBold != null) {
       rawBoldPath = rawBold;
       foundLabels.add('bold');
@@ -292,6 +333,7 @@ class FmriSessionState extends ChangeNotifier {
     if (boldMni != null) {
       kind = DetectedDatasetKind.preprocessed;
       preprocOutDir = File(boldMni).parent.path;
+      resultsDir = '$preprocOutDir${Platform.pathSeparator}results';
     } else if (rawT1 != null || rawBold != null) {
       kind = DetectedDatasetKind.rawNifti;
       final rawParent = Directory(
@@ -301,10 +343,12 @@ class FmriSessionState extends ChangeNotifier {
         dicomOutDir = rawParent.path;
       }
       preprocOutDir = '${rootDir.path}${Platform.pathSeparator}preproc';
+      resultsDir = '$preprocOutDir${Platform.pathSeparator}results';
     } else if (dicomSeries.isNotEmpty) {
       kind = DetectedDatasetKind.rawDicom;
       dicomOutDir = '${rootDir.path}${Platform.pathSeparator}raw_nifti';
       preprocOutDir = '${rootDir.path}${Platform.pathSeparator}preproc';
+      resultsDir = '$preprocOutDir${Platform.pathSeparator}results';
     } else {
       kind = DetectedDatasetKind.empty;
     }

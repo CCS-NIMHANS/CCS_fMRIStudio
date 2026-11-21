@@ -6,7 +6,7 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `load_or_init_mask`, `to_lesion_dto`
+// These functions are ignored because they are not marked as `pub`: `export_lesion_pipeline_outputs`, `lerp_u8`, `load_or_init_mask`, `render_carpet_rgba`, `render_fc_matrix_rgba`, `to_lesion_dto`
 
 Future<EngineInfo> engineInfo() => RustLib.instance.api.crateApiEngineInfo();
 
@@ -140,6 +140,7 @@ Future<LesionPipelineSummary> runLesionAwarePipeline({
   required double fdThresholdMm,
   required double maxDamagePct,
   required int lesionDilateVoxels,
+  String? outDir,
 }) => RustLib.instance.api.crateApiRunLesionAwarePipeline(
   boldPath: boldPath,
   atlasPath: atlasPath,
@@ -153,6 +154,7 @@ Future<LesionPipelineSummary> runLesionAwarePipeline({
   fdThresholdMm: fdThresholdMm,
   maxDamagePct: maxDamagePct,
   lesionDilateVoxels: lesionDilateVoxels,
+  outDir: outDir,
 );
 
 class DenoisePipelineSummary {
@@ -254,6 +256,12 @@ class LesionPipelineSummary {
   final double lesionSeedMeanAbsR;
   final double meanAbsFc;
   final double totalMs;
+  final Uint8List fcPreviewRgba;
+  final int fcPreviewSize;
+  final Uint8List carpetRgba;
+  final int carpetWidth;
+  final int carpetHeight;
+  final String? exportedDir;
 
   const LesionPipelineSummary({
     required this.nTimepoints,
@@ -271,6 +279,12 @@ class LesionPipelineSummary {
     required this.lesionSeedMeanAbsR,
     required this.meanAbsFc,
     required this.totalMs,
+    required this.fcPreviewRgba,
+    required this.fcPreviewSize,
+    required this.carpetRgba,
+    required this.carpetWidth,
+    required this.carpetHeight,
+    this.exportedDir,
   });
 
   @override
@@ -289,7 +303,13 @@ class LesionPipelineSummary {
       lateralityIndex.hashCode ^
       lesionSeedMeanAbsR.hashCode ^
       meanAbsFc.hashCode ^
-      totalMs.hashCode;
+      totalMs.hashCode ^
+      fcPreviewRgba.hashCode ^
+      fcPreviewSize.hashCode ^
+      carpetRgba.hashCode ^
+      carpetWidth.hashCode ^
+      carpetHeight.hashCode ^
+      exportedDir.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -310,7 +330,13 @@ class LesionPipelineSummary {
           lateralityIndex == other.lateralityIndex &&
           lesionSeedMeanAbsR == other.lesionSeedMeanAbsR &&
           meanAbsFc == other.meanAbsFc &&
-          totalMs == other.totalMs;
+          totalMs == other.totalMs &&
+          fcPreviewRgba == other.fcPreviewRgba &&
+          fcPreviewSize == other.fcPreviewSize &&
+          carpetRgba == other.carpetRgba &&
+          carpetWidth == other.carpetWidth &&
+          carpetHeight == other.carpetHeight &&
+          exportedDir == other.exportedDir;
 }
 
 class LesionSummaryDto {

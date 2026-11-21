@@ -428,6 +428,7 @@ fn wire__crate__api__run_lesion_aware_pipeline_impl(
             let api_fd_threshold_mm = <f64>::sse_decode(&mut deserializer);
             let api_max_damage_pct = <f64>::sse_decode(&mut deserializer);
             let api_lesion_dilate_voxels = <u32>::sse_decode(&mut deserializer);
+            let api_out_dir = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
@@ -445,6 +446,7 @@ fn wire__crate__api__run_lesion_aware_pipeline_impl(
                             api_fd_threshold_mm,
                             api_max_damage_pct,
                             api_lesion_dilate_voxels,
+                            api_out_dir,
                         )?;
                         std::result::Result::Ok(output_ok)
                     })(),
@@ -613,6 +615,12 @@ impl SseDecode for crate::api::LesionPipelineSummary {
         let mut var_lesionSeedMeanAbsR = <f64>::sse_decode(deserializer);
         let mut var_meanAbsFc = <f64>::sse_decode(deserializer);
         let mut var_totalMs = <f64>::sse_decode(deserializer);
+        let mut var_fcPreviewRgba = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_fcPreviewSize = <u32>::sse_decode(deserializer);
+        let mut var_carpetRgba = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_carpetWidth = <u32>::sse_decode(deserializer);
+        let mut var_carpetHeight = <u32>::sse_decode(deserializer);
+        let mut var_exportedDir = <Option<String>>::sse_decode(deserializer);
         return crate::api::LesionPipelineSummary {
             n_timepoints: var_nTimepoints,
             n_rois: var_nRois,
@@ -629,6 +637,12 @@ impl SseDecode for crate::api::LesionPipelineSummary {
             lesion_seed_mean_abs_r: var_lesionSeedMeanAbsR,
             mean_abs_fc: var_meanAbsFc,
             total_ms: var_totalMs,
+            fc_preview_rgba: var_fcPreviewRgba,
+            fc_preview_size: var_fcPreviewSize,
+            carpet_rgba: var_carpetRgba,
+            carpet_width: var_carpetWidth,
+            carpet_height: var_carpetHeight,
+            exported_dir: var_exportedDir,
         };
     }
 }
@@ -881,6 +895,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::LesionPipelineSummary {
             self.lesion_seed_mean_abs_r.into_into_dart().into_dart(),
             self.mean_abs_fc.into_into_dart().into_dart(),
             self.total_ms.into_into_dart().into_dart(),
+            self.fc_preview_rgba.into_into_dart().into_dart(),
+            self.fc_preview_size.into_into_dart().into_dart(),
+            self.carpet_rgba.into_into_dart().into_dart(),
+            self.carpet_width.into_into_dart().into_dart(),
+            self.carpet_height.into_into_dart().into_dart(),
+            self.exported_dir.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1047,6 +1067,12 @@ impl SseEncode for crate::api::LesionPipelineSummary {
         <f64>::sse_encode(self.lesion_seed_mean_abs_r, serializer);
         <f64>::sse_encode(self.mean_abs_fc, serializer);
         <f64>::sse_encode(self.total_ms, serializer);
+        <Vec<u8>>::sse_encode(self.fc_preview_rgba, serializer);
+        <u32>::sse_encode(self.fc_preview_size, serializer);
+        <Vec<u8>>::sse_encode(self.carpet_rgba, serializer);
+        <u32>::sse_encode(self.carpet_width, serializer);
+        <u32>::sse_encode(self.carpet_height, serializer);
+        <Option<String>>::sse_encode(self.exported_dir, serializer);
     }
 }
 

@@ -2,6 +2,23 @@
 
 All notable changes to **CCS_fMRIStudio** are documented in this file.
 
+## [0.1.3] - 2026-11-21
+
+### Added
+- **Persistent Whole-Pipeline Progress Header & Live Elapsed Timer (`lib/main.dart`)**:
+  - Added a 5-stage top pipeline progress bar (`1. Import` → `2. Preprocess` → `3. Lesion (Opt)` → `4. Denoise` → `5. Results`) showing overall percentage (`0%–100%`) and green checkmarks on completed stages.
+  - Added a live Activity Banner during sidecar/Rust execution showing the active stage description, determinate/indeterminate `LinearProgressIndicator`, and a live `MM:SS` elapsed timer.
+- **Visual 8-Stage ANTsPy Preprocessing Tracker (Step 2)**:
+  - Parses `[preproc]` stage milestones in real time (`load_inputs`, `t1_n4_bias_correction`, `t1_atropos_segmentation`, `t1_to_mni`, `bold_motion_correction`, `mean_bold_to_t1_rigid`, `warp_4d_and_masks_to_mni`, `align_schaefer400_atlas`), displaying per-stage completion tiles with elapsed seconds, overall bar progress, a green completion CTA to Step 4, and a collapsible Technical Log.
+- **New Step 5 (`5. Results & Export`) with Rust-Rendered Brain Visualizations (`rust/src/api.rs`, `lib/main.dart`)**:
+  - Extended `LesionPipelineSummary` with Rust-rendered RGBA buffers for the **400×400 Functional Connectivity Matrix** (`fcPreviewRgba`, blue–white–crimson diverging scale) and **Denoised ROI Timeseries Carpet Plot** (`carpetRgba`).
+  - Automatically exports `fc_matrix.csv`, `denoised_timeseries.csv`, `biomarkers_summary.json`, and `clinical_report.md` into `<preproc>/results/`, surfaced with 4 KPI cards, native **Open Results Folder**, **Save Clinical Report As…**, and **Analyze Another Patient** actions.
+
+### Fixed
+- **Step 4 UI Cleanup & Scaled Brain Slice Viewport**:
+  - Replaced the 7 stacked raw path inputs with clean short basename chips, an explicit **Apply Lesion Mask** toggle (with large-mask warning + 1-click re-run without mask), collapsible manual path overrides, properly labeled individual sliders, and a full-size `FittedBox` dark-framed slice viewport.
+  - Excluded derived `_n4` / `mask` files when auto-detecting `rawT1Path` in `FmriSessionState.scanFolder`.
+
 ## [0.1.2] - 2026-11-21
 
 ### Added

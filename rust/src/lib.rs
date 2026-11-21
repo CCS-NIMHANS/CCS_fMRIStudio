@@ -314,4 +314,49 @@ mod tests {
         let seed_r = lesion_network_mapping(bold.view(), lesion.view(), clean.view()).unwrap();
         assert!(seed_r[0].is_nan());
     }
+
+    #[test]
+    fn test_fc_carpet_rgba_and_csv_export() {
+        use crate::api::{
+            export_lesion_pipeline_outputs, render_carpet_rgba, render_fc_matrix_rgba,
+        };
+
+        let mut fc = Array2::<f64>::zeros((3, 3));
+        fc[[0, 0]] = f64::NAN;
+        fc[[1, 1]] = 1.0;
+        fc[[1, 2]] = -0.8;
+        fc[[2, 1]] = -0.8;
+        fc[[2, 2]] = 1.0;
+        let (sz, fc_rgba) = render_fc_matrix_rgba(fc.view());
+        assert_eq!(sz, 3);
+        assert_eq!(fc_rgba.len(), 3 * 3 * 4);
+        assert_eq!(&fc_rgba[0..4], &[30, 41, 59, 255]); // NaN pixel
+
+        let mut ts = Array2::<f64>::zeros((12, 3));
+        for t in 0..12 {
+            ts[[t, 0]] = f64::NAN;
+            ts[[t, 1]] = (t as f64) * 0.5;
+            ts[[t, 2]] = -(t as f64) * 0.5;
+        }
+        let (w, h, carpet_rgba) = render_carpet_rgba(ts.view());
+        assert_eq!((w, h), (12, 3));
+        assert_eq!(carpet_rgba.len(), 12 * 3 * 4);
+
+        let out_dir = std::env::temp_dir().join("ccs_fmri_export_unit_test");
+        let _ = std::fs::remove_dir_all(&out_dir);
+        let summary_json = serde_json::json!({"n_rois": 3, "n_intact_rois": 2});
+        export_lesion_pipeline_outputs(
+            &out_dir,
+            fc.view(),
+            ts.view(),
+            &summary_json,
+            "# Test Report\n",
+        )
+        .unwrap();
+        assert!(out_dir.join("fc_matrix.csv").exists());
+        assert!(out_dir.join("denoised_timeseries.csv").exists());
+        assert!(out_dir.join("biomarkers_summary.json").exists());
+        assert!(out_dir.join("clinical_report.md").exists());
+        let _ = std::fs::remove_dir_all(&out_dir);
+    }
 }

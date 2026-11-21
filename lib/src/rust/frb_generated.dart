@@ -146,6 +146,7 @@ abstract class RustLibApi extends BaseApi {
     required double fdThresholdMm,
     required double maxDamagePct,
     required int lesionDilateVoxels,
+    String? outDir,
   });
 
   Future<DenoisePipelineSummary> crateApiRunRoiDenoisePipeline({
@@ -548,6 +549,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required double fdThresholdMm,
     required double maxDamagePct,
     required int lesionDilateVoxels,
+    String? outDir,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -565,6 +567,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_f_64(fdThresholdMm, serializer);
           sse_encode_f_64(maxDamagePct, serializer);
           sse_encode_u_32(lesionDilateVoxels, serializer);
+          sse_encode_opt_String(outDir, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -590,6 +593,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           fdThresholdMm,
           maxDamagePct,
           lesionDilateVoxels,
+          outDir,
         ],
         apiImpl: this,
       ),
@@ -612,6 +616,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "fdThresholdMm",
           "maxDamagePct",
           "lesionDilateVoxels",
+          "outDir",
         ],
       );
 
@@ -754,8 +759,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   LesionPipelineSummary dco_decode_lesion_pipeline_summary(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 15)
-      throw Exception('unexpected arr length: expect 15 but see ${arr.length}');
+    if (arr.length != 21)
+      throw Exception('unexpected arr length: expect 21 but see ${arr.length}');
     return LesionPipelineSummary(
       nTimepoints: dco_decode_u_32(arr[0]),
       nRois: dco_decode_u_32(arr[1]),
@@ -772,6 +777,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       lesionSeedMeanAbsR: dco_decode_f_64(arr[12]),
       meanAbsFc: dco_decode_f_64(arr[13]),
       totalMs: dco_decode_f_64(arr[14]),
+      fcPreviewRgba: dco_decode_list_prim_u_8_strict(arr[15]),
+      fcPreviewSize: dco_decode_u_32(arr[16]),
+      carpetRgba: dco_decode_list_prim_u_8_strict(arr[17]),
+      carpetWidth: dco_decode_u_32(arr[18]),
+      carpetHeight: dco_decode_u_32(arr[19]),
+      exportedDir: dco_decode_opt_String(arr[20]),
     );
   }
 
@@ -976,6 +987,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_lesionSeedMeanAbsR = sse_decode_f_64(deserializer);
     var var_meanAbsFc = sse_decode_f_64(deserializer);
     var var_totalMs = sse_decode_f_64(deserializer);
+    var var_fcPreviewRgba = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_fcPreviewSize = sse_decode_u_32(deserializer);
+    var var_carpetRgba = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_carpetWidth = sse_decode_u_32(deserializer);
+    var var_carpetHeight = sse_decode_u_32(deserializer);
+    var var_exportedDir = sse_decode_opt_String(deserializer);
     return LesionPipelineSummary(
       nTimepoints: var_nTimepoints,
       nRois: var_nRois,
@@ -992,6 +1009,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       lesionSeedMeanAbsR: var_lesionSeedMeanAbsR,
       meanAbsFc: var_meanAbsFc,
       totalMs: var_totalMs,
+      fcPreviewRgba: var_fcPreviewRgba,
+      fcPreviewSize: var_fcPreviewSize,
+      carpetRgba: var_carpetRgba,
+      carpetWidth: var_carpetWidth,
+      carpetHeight: var_carpetHeight,
+      exportedDir: var_exportedDir,
     );
   }
 
@@ -1202,6 +1225,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.lesionSeedMeanAbsR, serializer);
     sse_encode_f_64(self.meanAbsFc, serializer);
     sse_encode_f_64(self.totalMs, serializer);
+    sse_encode_list_prim_u_8_strict(self.fcPreviewRgba, serializer);
+    sse_encode_u_32(self.fcPreviewSize, serializer);
+    sse_encode_list_prim_u_8_strict(self.carpetRgba, serializer);
+    sse_encode_u_32(self.carpetWidth, serializer);
+    sse_encode_u_32(self.carpetHeight, serializer);
+    sse_encode_opt_String(self.exportedDir, serializer);
   }
 
   @protected

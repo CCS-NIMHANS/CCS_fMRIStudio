@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
@@ -60,6 +61,17 @@ class FmriWorkspacePage extends StatefulWidget {
 }
 
 class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
+  static const List<(String key, String label)> _preprocStages = [
+    ('load_inputs', 'Load T1w & 4D BOLD'),
+    ('t1_n4_bias_correction', 'N4 Bias Correction'),
+    ('t1_atropos_segmentation', 'Atropos Tissue WM/CSF'),
+    ('t1_to_mni', 'Nonlinear MNI Warp'),
+    ('bold_motion_correction', '4D Motion Correction'),
+    ('mean_bold_to_t1_rigid', 'BOLD -> T1w Align'),
+    ('warp_4d_and_masks_to_mni', 'Warp 4D BOLD to MNI'),
+    ('align_schaefer400_atlas', 'Schaefer-400 Atlas'),
+  ];
+
   final FmriSessionState _session = FmriSessionState();
   int _stepIndex = 0;
 
@@ -69,7 +81,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   final _dicomOutCtrl = TextEditingController();
   final _inspectNiftiCtrl = TextEditingController();
 
-  // Step 2 controllers
+  // Step 2 controllers & live stage state
   final _rawT1Ctrl = TextEditingController();
   final _rawBoldCtrl = TextEditingController();
   final _preprocOutCtrl = TextEditingController();
@@ -78,6 +90,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   String _templateId = 'mni152_adult';
   String _transform = 'SyNQuick';
   String _lesionMode = 'none';
+  final Map<String, String> _stageDurations = {};
 
   // Step 4 controllers
   final _boldMniCtrl = TextEditingController();
@@ -87,11 +100,19 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   final _csfCtrl = TextEditingController();
   final _confoundsCtrl = TextEditingController();
   final _lesionMaskCtrl = TextEditingController();
+  bool _useLesionMask = false;
 
   rust_api.EngineInfo? _engineInfo;
   String? _engineError;
   bool _checkingUpdates = false;
+
+  // Live progress banner & elapsed timer
   bool _busy = false;
+  double? _taskProgress; // null = indeterminate, 0..1 = determinate
+  String _taskStageLabel = '';
+  int _elapsedSeconds = 0;
+  Timer? _taskTimer;
+
   String _statusMessage =
       'Open a patient folder (raw DICOM, NIfTI, or preprocessed outputs) to begin.';
   final List<String> _sidecarLog = [];
@@ -100,6 +121,8 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   rust_api.NiftiHeaderSummary? _headerSummary;
   rust_api.LesionPipelineSummary? _pipelineSummary;
   ui.Image? _sliceImage;
+  ui.Image? _fcImage;
+  ui.Image? _carpetImage;
   String _plane = 'axial';
   int _sliceIndex = 47;
   int _maxSlice = 94;
@@ -140,6 +163,9 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     sync(_csfCtrl, _session.csfMaskPath);
     sync(_confoundsCtrl, _session.confoundsPath);
     sync(_lesionMaskCtrl, _session.lesionMaskPath);
+    if (_session.lesionMaskPath.isNotEmpty) {
+      _useLesionMask = true;
+    }
     if (_inspectNiftiCtrl.text.isEmpty) {
       final candidate = _session.boldMniPath.isNotEmpty
           ? _session.boldMniPath
@@ -148,8 +174,51 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     }
   }
 
+  void _startActivity(String label, {double? progress}) {
+    _taskTimer?.cancel();
+    setState(() {
+      _busy = true;
+      _taskStageLabel = label;
+      _taskProgress = progress;
+      _elapsedSeconds = 0;
+    });
+    _taskTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _elapsedSeconds++);
+    });
+  }
+
+  void _stopActivity() {
+    _taskTimer?.cancel();
+    _taskTimer = null;
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _taskProgress = null;
+    });
+  }
+
+  static String _formatElapsed(int seconds) {
+    final m = (seconds ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  Future<ui.Image> _decodeRgba(Uint8List rgba, int width, int height) {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      rgba,
+      width,
+      height,
+      ui.PixelFormat.rgba8888,
+      completer.complete,
+    );
+    return completer.future;
+  }
+
   @override
   void dispose() {
+    _taskTimer?.cancel();
     _session.removeListener(_syncControllersFromSession);
     _session.dispose();
     _t1DicomCtrl.dispose();
@@ -169,6 +238,8 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     _confoundsCtrl.dispose();
     _lesionMaskCtrl.dispose();
     _sliceImage?.dispose();
+    _fcImage?.dispose();
+    _carpetImage?.dispose();
     super.dispose();
   }
 
@@ -208,18 +279,18 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
 
   Future<void> _openPatientFolder({bool jumpToDenoise = false}) async {
     final folder = await FilePicker.getDirectoryPath(
-      dialogTitle:
-          'Open Patient / MRI Folder (DICOM, NIfTI, or Preprocessed)',
+      dialogTitle: 'Open Patient / MRI Folder (DICOM, NIfTI, or Preprocessed)',
     );
     if (folder == null || folder.isEmpty) return;
     final scan = _session.scanFolder(folder);
     final name = FmriSessionState.basename(scan.rootFolder);
     setState(() {
       _lastScan = scan;
+      _useLesionMask = _session.lesionMaskPath.isNotEmpty;
       switch (scan.kind) {
         case DetectedDatasetKind.preprocessed:
           _statusMessage =
-              'Loaded preprocessed MNI outputs from "$name" (${scan.detectedLabels.length} files). Ready for Step 3 (Lesion) or Step 4 (Denoise).';
+              'Loaded preprocessed MNI outputs from "$name" (${scan.detectedLabels.length} files). Ready for Step 4 (Denoise).';
           if (jumpToDenoise) _stepIndex = 3;
         case DetectedDatasetKind.rawNifti:
           _statusMessage =
@@ -284,11 +355,9 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       outDir = '${Directory(t1Dir).parent.path}${Platform.pathSeparator}raw_nifti';
       _dicomOutCtrl.text = outDir;
     }
-    setState(() {
-      _busy = true;
-      _sidecarLog.clear();
-      _statusMessage = 'Converting DICOMs with dcm2niix…';
-    });
+    _sidecarLog.clear();
+    _statusMessage = 'Converting scanner DICOMs to BIDS NIfTI with dcm2niix…';
+    _startActivity('Converting scanner DICOMs with dcm2niix…');
     try {
       final code = await _session.runSidecarModule(
         module: 'ccs_fmri_sidecar.dicom_convert',
@@ -314,7 +383,31 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _stopActivity();
+    }
+  }
+
+  void _handlePreprocLogLine(String line) {
+    _sidecarLog.add(line);
+    final m = RegExp(
+      r'^\[preproc\]\s+([A-Za-z0-9_]+):\s*([0-9.]+s)',
+    ).firstMatch(line.trim());
+    if (m == null) return;
+    final rawKey = m.group(1)!;
+    final dur = m.group(2)!;
+    for (final (stageKey, _) in _preprocStages) {
+      if (rawKey == stageKey || rawKey.startsWith(stageKey)) {
+        _stageDurations[stageKey] = dur;
+        break;
+      }
+    }
+    final completed = _stageDurations.length;
+    _taskProgress = completed / _preprocStages.length;
+    if (completed < _preprocStages.length) {
+      _taskStageLabel =
+          'ANTsPy Preprocessing ($completed/${_preprocStages.length}): ${_preprocStages[completed].$2}…';
+    } else {
+      _taskStageLabel = 'ANTsPy Preprocessing complete!';
     }
   }
 
@@ -332,11 +425,14 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       outDir = '${File(boldPath).parent.path}${Platform.pathSeparator}preproc';
       _preprocOutCtrl.text = outDir;
     }
-    setState(() {
-      _busy = true;
-      _sidecarLog.clear();
-      _statusMessage = 'Running ANTsPy preprocessing ($_templateId, $_lesionMode)…';
-    });
+    _sidecarLog.clear();
+    _stageDurations.clear();
+    _statusMessage = 'Running ANTsPy preprocessing ($_templateId, $_lesionMode)…';
+    _startActivity(
+      'ANTsPy Preprocessing (0/8): ${_preprocStages.first.$2}…',
+      progress: 0.04,
+    );
+
     final args = <String>[
       '--t1',
       t1Path,
@@ -364,23 +460,27 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         args: args,
         onLog: (line) {
           if (!mounted) return;
-          setState(() => _sidecarLog.add(line));
+          setState(() => _handlePreprocLogLine(line));
         },
       );
       if (code == 0) {
         final scan = _session.scanFolder(outDir);
         setState(() {
           _lastScan = scan;
+          _taskProgress = 1.0;
           _statusMessage =
-              'ANTsPy preprocessing complete! Outputs auto-loaded into Steps 3 & 4.';
+              'ANTsPy preprocessing complete! Outputs loaded into Step 4 (Denoise).';
         });
+        if (_session.boldMniPath.isNotEmpty) {
+          await _inspectAndRender(_session.boldMniPath);
+        }
       } else {
         setState(
-          () => _statusMessage = 'Preprocessing failed (exit $code). See log.',
+          () => _statusMessage = 'Preprocessing failed (exit $code). See Technical Log.',
         );
       }
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _stopActivity();
     }
   }
 
@@ -403,10 +503,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       });
       return;
     }
-    setState(() {
-      _busy = true;
-      _statusMessage = 'Inspecting header & rendering slice…';
-    });
+    _startActivity('Inspecting NIfTI header & rendering slice…');
     try {
       final hdr = await rust_api.inspectNifti(path: path);
       final maxS = _maxSliceForPlane(hdr, _plane);
@@ -416,23 +513,17 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
           : 0;
       final clampedTp = _timepoint.clamp(0, maxT);
       final lesionPath = _lesionMaskCtrl.text.trim();
+      final activeLesion =
+          (_useLesionMask && lesionPath.isNotEmpty) ? lesionPath : null;
       final slice = await rust_api.renderSliceWithLesionRgba(
         path: path,
-        lesionMaskPath: lesionPath.isEmpty ? null : lesionPath,
+        lesionMaskPath: activeLesion,
         plane: _plane,
         sliceIndex: clampedSlice,
         timepoint: clampedTp,
         overlayAlpha: 0.40,
       );
-      final completer = Completer<ui.Image>();
-      ui.decodeImageFromPixels(
-        slice.rgba,
-        slice.width,
-        slice.height,
-        ui.PixelFormat.rgba8888,
-        completer.complete,
-      );
-      final decoded = await completer.future;
+      final decoded = await _decodeRgba(slice.rgba, slice.width, slice.height);
       if (!mounted) {
         decoded.dispose();
         return;
@@ -446,13 +537,13 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         _sliceImage?.dispose();
         _sliceImage = decoded;
         _statusMessage =
-            'Loaded $path (${hdr.dims.join(" × ")}, TR=${hdr.trSec.toStringAsFixed(2)}s)';
+            'Loaded ${FmriSessionState.basename(path)} (${hdr.dims.join(" × ")}, TR=${hdr.trSec.toStringAsFixed(2)}s)';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() => _statusMessage = 'Error: $e');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _stopActivity();
     }
   }
 
@@ -471,22 +562,26 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     if (boldPath.isEmpty || atlasPath.isEmpty) {
       setState(
         () => _statusMessage =
-            'Select a 4D BOLD NIfTI and Atlas NIfTI (or click Open Folder) first.',
+            'Load a preprocessed folder (BOLD MNI + Atlas) first.',
       );
       return;
     }
-    setState(() {
-      _busy = true;
-      _statusMessage =
-          'Running lesion-aware Rust parcellation + simultaneous denoising…';
-    });
+    final outDir = _session.resultsDir.isNotEmpty
+        ? _session.resultsDir
+        : '${File(boldPath).parent.path}${Platform.pathSeparator}results';
+
+    _startActivity(
+      'Running Rust parcellation, aCompCor, simultaneous denoising & FC export…',
+    );
     try {
       final lesionPath = _lesionMaskCtrl.text.trim();
+      final activeLesion =
+          (_useLesionMask && lesionPath.isNotEmpty) ? lesionPath : null;
       final labelsPath = _labelsCtrl.text.trim();
       final summary = await rust_api.runLesionAwarePipeline(
         boldPath: boldPath,
         atlasPath: atlasPath,
-        lesionMaskPath: lesionPath.isEmpty ? null : lesionPath,
+        lesionMaskPath: activeLesion,
         atlasLabelsJsonPath: labelsPath.isEmpty ? null : labelsPath,
         wmMaskPath: _wmCtrl.text.trim().isEmpty ? null : _wmCtrl.text.trim(),
         csfMaskPath: _csfCtrl.text.trim().isEmpty ? null : _csfCtrl.text.trim(),
@@ -497,19 +592,118 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         fdThresholdMm: _fdThresholdMm,
         maxDamagePct: _maxDamagePct,
         lesionDilateVoxels: 1,
+        outDir: outDir,
       );
-      if (!mounted) return;
+
+      ui.Image? fcImg;
+      if (summary.fcPreviewSize > 0 && summary.fcPreviewRgba.isNotEmpty) {
+        fcImg = await _decodeRgba(
+          summary.fcPreviewRgba,
+          summary.fcPreviewSize,
+          summary.fcPreviewSize,
+        );
+      }
+      ui.Image? carpetImg;
+      if (summary.carpetWidth > 0 &&
+          summary.carpetHeight > 0 &&
+          summary.carpetRgba.isNotEmpty) {
+        carpetImg = await _decodeRgba(
+          summary.carpetRgba,
+          summary.carpetWidth,
+          summary.carpetHeight,
+        );
+      }
+      if (!mounted) {
+        fcImg?.dispose();
+        carpetImg?.dispose();
+        return;
+      }
       setState(() {
         _pipelineSummary = summary;
+        _session.resultsDir = summary.exportedDir ?? outDir;
+        _fcImage?.dispose();
+        _fcImage = fcImg;
+        _carpetImage?.dispose();
+        _carpetImage = carpetImg;
+        _stepIndex = 4;
         _statusMessage =
-            'Completed ${summary.nIntactRois}/${summary.nRois} intact ROIs in ${summary.totalMs.toStringAsFixed(1)} ms';
+            'Completed ${summary.nIntactRois}/${summary.nRois} intact ROIs in ${summary.totalMs.toStringAsFixed(1)} ms — saved results to ${FmriSessionState.basename(_session.resultsDir)}/.';
       });
     } catch (e) {
       if (!mounted) return;
       setState(() => _statusMessage = 'Pipeline error: $e');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _stopActivity();
     }
+  }
+
+  Future<void> _openDirectoryInOs(String dirPath) async {
+    try {
+      if (Platform.isMacOS) {
+        await Process.run('open', [dirPath]);
+      } else if (Platform.isWindows) {
+        await Process.run('explorer', [dirPath]);
+      } else {
+        await Process.run('xdg-open', [dirPath]);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not open folder: $e')));
+    }
+  }
+
+  Future<void> _saveReportAs() async {
+    final exportDir = _pipelineSummary?.exportedDir;
+    if (exportDir == null) return;
+    final src = File('$exportDir${Platform.pathSeparator}clinical_report.md');
+    if (!src.existsSync()) return;
+    final dest = await FilePicker.saveFile(
+      dialogTitle: 'Save Clinical Report As',
+      fileName: 'clinical_report.md',
+    );
+    if (dest == null || dest.isEmpty) return;
+    await src.copy(dest);
+    if (!mounted) return;
+    setState(() => _statusMessage = 'Saved report to $dest');
+  }
+
+  void _resetSession() {
+    _session.reset();
+    _t1DicomCtrl.clear();
+    _boldDicomCtrl.clear();
+    _dicomOutCtrl.clear();
+    _inspectNiftiCtrl.clear();
+    _rawT1Ctrl.clear();
+    _rawBoldCtrl.clear();
+    _preprocOutCtrl.clear();
+    _preprocLesionCtrl.clear();
+    _customTemplateCtrl.clear();
+    _boldMniCtrl.clear();
+    _atlasCtrl.clear();
+    _labelsCtrl.clear();
+    _wmCtrl.clear();
+    _csfCtrl.clear();
+    _confoundsCtrl.clear();
+    _lesionMaskCtrl.clear();
+    _sidecarLog.clear();
+    _stageDurations.clear();
+    setState(() {
+      _useLesionMask = false;
+      _lastScan = null;
+      _headerSummary = null;
+      _pipelineSummary = null;
+      _sliceImage?.dispose();
+      _sliceImage = null;
+      _fcImage?.dispose();
+      _fcImage = null;
+      _carpetImage?.dispose();
+      _carpetImage = null;
+      _stepIndex = 0;
+      _statusMessage =
+          'Session cleared. Open a new patient folder (raw DICOM, NIfTI, or preprocessed outputs).';
+    });
   }
 
   Widget _stepIcon(IconData icon, bool ready) {
@@ -523,12 +717,21 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
 
   @override
   Widget build(BuildContext context) {
-    final step1Ready = _session.rawBoldPath.isNotEmpty ||
+    final step1Ready =
+        _session.rawBoldPath.isNotEmpty ||
         _session.boldMniPath.isNotEmpty ||
         (_lastScan?.dicomSeries.isNotEmpty ?? false);
     final step2Ready = _session.boldMniPath.isNotEmpty;
     final step3Ready = _session.lesionMaskPath.isNotEmpty;
     final step4Ready = _pipelineSummary != null;
+    final step5Ready = _pipelineSummary != null;
+
+    final completedCore =
+        (step1Ready ? 1 : 0) +
+        (step2Ready ? 1 : 0) +
+        (step4Ready ? 1 : 0) +
+        (step5Ready ? 1 : 0);
+    final overallProgress = completedCore / 4.0;
 
     return Scaffold(
       appBar: AppBar(
@@ -574,6 +777,11 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       ),
       body: Column(
         children: [
+          _buildWholePipelineBar(
+            stepStates: [step1Ready, step2Ready, step3Ready, step4Ready, step5Ready],
+            overallProgress: overallProgress,
+          ),
+          if (_busy) _buildLiveActivityBanner(),
           Expanded(
             child: Row(
               children: [
@@ -585,8 +793,14 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                       setState(() => _stepIndex = idx),
                   destinations: [
                     NavigationRailDestination(
-                      icon: _stepIcon(Icons.drive_folder_upload_outlined, step1Ready),
-                      selectedIcon: _stepIcon(Icons.drive_folder_upload, step1Ready),
+                      icon: _stepIcon(
+                        Icons.drive_folder_upload_outlined,
+                        step1Ready,
+                      ),
+                      selectedIcon: _stepIcon(
+                        Icons.drive_folder_upload,
+                        step1Ready,
+                      ),
                       label: const Text('1. Import'),
                     ),
                     NavigationRailDestination(
@@ -600,9 +814,14 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                       label: const Text('3. Lesion'),
                     ),
                     NavigationRailDestination(
-                      icon: _stepIcon(Icons.analytics_outlined, step4Ready),
-                      selectedIcon: _stepIcon(Icons.analytics, step4Ready),
+                      icon: _stepIcon(Icons.tune_outlined, step4Ready),
+                      selectedIcon: _stepIcon(Icons.tune, step4Ready),
                       label: const Text('4. Denoise'),
+                    ),
+                    NavigationRailDestination(
+                      icon: _stepIcon(Icons.insights_outlined, step5Ready),
+                      selectedIcon: _stepIcon(Icons.insights, step5Ready),
+                      label: const Text('5. Results'),
                     ),
                   ],
                 ),
@@ -615,6 +834,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                       _buildStep2Preprocess(context),
                       LesionEditorPanel(session: _session),
                       _buildStep4Denoise(context),
+                      _buildStep5Results(context),
                     ],
                   ),
                 ),
@@ -630,6 +850,200 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
               style: const TextStyle(fontSize: 12.5, color: Color(0xFFCBD5E1)),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWholePipelineBar({
+    required List<bool> stepStates,
+    required double overallProgress,
+  }) {
+    const labels = [
+      '1. Import',
+      '2. Preprocess',
+      '3. Lesion (Opt)',
+      '4. Denoise',
+      '5. Results',
+    ];
+    final pct = (overallProgress * 100).round();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      decoration: const BoxDecoration(
+        color: Color(0xFF162033),
+        border: Border(bottom: BorderSide(color: Colors.white12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'Pipeline Progress',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF94A3B8),
+                ),
+              ),
+              const SizedBox(width: 12),
+              for (var i = 0; i < labels.length; i++) ...[
+                Expanded(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(6),
+                    onTap: () => setState(() => _stepIndex = i),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _stepIndex == i
+                            ? const Color(0xFF0D9488).withValues(alpha: 0.28)
+                            : (stepStates[i]
+                                ? const Color(0xFF059669).withValues(alpha: 0.16)
+                                : const Color(0xFF0F172A)),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: _stepIndex == i
+                              ? const Color(0xFF2DD4BF)
+                              : (stepStates[i]
+                                  ? const Color(0xFF10B981)
+                                  : Colors.white12),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            stepStates[i]
+                                ? Icons.check_circle
+                                : (_stepIndex == i
+                                    ? Icons.radio_button_checked
+                                    : Icons.radio_button_unchecked),
+                            size: 14,
+                            color: stepStates[i]
+                                ? const Color(0xFF10B981)
+                                : (_stepIndex == i
+                                    ? const Color(0xFF2DD4BF)
+                                    : const Color(0xFF64748B)),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              labels[i],
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: _stepIndex == i
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
+                                color: _stepIndex == i || stepStates[i]
+                                    ? Colors.white
+                                    : const Color(0xFF94A3B8),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (i < labels.length - 1)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Icon(
+                      Icons.chevron_right,
+                      size: 16,
+                      color: Color(0xFF475569),
+                    ),
+                  ),
+              ],
+              const SizedBox(width: 12),
+              Text(
+                '$pct%',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF2DD4BF),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: overallProgress,
+              minHeight: 4,
+              backgroundColor: const Color(0xFF0F172A),
+              color: const Color(0xFF2DD4BF),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLiveActivityBanner() {
+    final pctLabel = _taskProgress != null
+        ? ' (${(_taskProgress! * 100).round()}%)'
+        : '';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0F292E),
+        border: Border(bottom: BorderSide(color: Color(0xFF14B8A6))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '$_taskStageLabel$pctLabel',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF99F6E4),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Chip(
+                backgroundColor: const Color(0xFF0F172A),
+                visualDensity: VisualDensity.compact,
+                label: Text(
+                  'Elapsed: ${_formatElapsed(_elapsedSeconds)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                    color: Color(0xFF2DD4BF),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: _taskProgress,
+              minHeight: 5,
+              backgroundColor: const Color(0xFF0F172A),
+              color: const Color(0xFF2DD4BF),
             ),
           ),
         ],
@@ -947,7 +1361,11 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                   ),
                 ],
               ),
-              if (_sidecarLog.isNotEmpty) _buildLogBox(),
+              if (_sidecarLog.isNotEmpty)
+                ExpansionTile(
+                  title: const Text('Conversion Log'),
+                  children: [_buildLogBox()],
+                ),
             ] else if (scan.kind == DetectedDatasetKind.rawNifti) ...[
               Wrap(
                 spacing: 8,
@@ -1022,11 +1440,11 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                   OutlinedButton.icon(
                     onPressed: () => setState(() => _stepIndex = 2),
                     icon: const Icon(Icons.brush),
-                    label: const Text('Open Lesion Editor (Step 3)'),
+                    label: const Text('Optional: Lesion Editor (Step 3)'),
                   ),
                   FilledButton.icon(
                     onPressed: () => setState(() => _stepIndex = 3),
-                    icon: const Icon(Icons.analytics),
+                    icon: const Icon(Icons.tune),
                     label: const Text('Denoise & View Brain (Step 4) →'),
                   ),
                 ],
@@ -1045,199 +1463,380 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   }
 
   Widget _buildStep2Preprocess(BuildContext context) {
+    final completedCount = _stageDurations.length;
+    final showStageCard =
+        (_busy && _taskStageLabel.startsWith('ANTsPy')) ||
+        _stageDurations.isNotEmpty ||
+        _sidecarLog.isNotEmpty;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
-      child: _buildCard(
-        title: 'Step 2: ANTsPy Spatial Normalization & Motion Correction',
-        subtitle:
-            'Align T1w and 4D BOLD scans into standard MNI brain space (~2 min). Choose Cost Function Masking or Enantiomorphic Healing for lesion scans.',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            PathPickerField(
-              controller: _rawT1Ctrl,
-              label: 'Raw T1w NIfTI (.nii / .nii.gz)',
-              onPicked: (p) {
-                _session.rawT1Path = p;
-                _session.notifyChanged();
-              },
-            ),
-            const SizedBox(height: 10),
-            PathPickerField(
-              controller: _rawBoldCtrl,
-              label: 'Raw 4D BOLD NIfTI (.nii / .nii.gz)',
-              onPicked: (p) {
-                _session.rawBoldPath = p;
-                _session.notifyChanged();
-              },
-            ),
-            const SizedBox(height: 10),
-            PathPickerField(
-              controller: _preprocOutCtrl,
-              label: 'Preprocessing Output Folder',
-              hint: 'Defaults to <BOLD dir>/preproc',
-              mode: PickerMode.pickDirectory,
-            ),
-            const SizedBox(height: 14),
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildCard(
+            title: 'Step 2: ANTsPy Spatial Normalization & Motion Correction',
+            subtitle:
+                'Align T1w and 4D BOLD scans into standard MNI brain space (~2 min). Choose Cost Function Masking or Enantiomorphic Healing for lesion scans.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _templateId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Clinical Template Cohort',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'mni152_adult',
-                        child: Text(
-                          'Adult TBI / MNI152NLin2009cAsym (2mm)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'older_adult_stroke',
-                        child: Text(
-                          'Older Stroke (Rorden Clinical Toolbox)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'pediatric_nihpd',
-                        child: Text(
-                          'Pediatric TBI / Stroke (NIHPD)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'acute_ct_stroke',
-                        child: Text(
-                          'CT-Only Acute Stroke',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setState(() => _templateId = v);
-                    },
-                  ),
+                PathPickerField(
+                  controller: _rawT1Ctrl,
+                  label: 'Raw T1w NIfTI (.nii / .nii.gz)',
+                  onPicked: (p) {
+                    _session.rawT1Path = p;
+                    _session.notifyChanged();
+                  },
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _transform,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'ANTs Registration',
-                      border: OutlineInputBorder(),
-                      isDense: true,
+                const SizedBox(height: 10),
+                PathPickerField(
+                  controller: _rawBoldCtrl,
+                  label: 'Raw 4D BOLD NIfTI (.nii / .nii.gz)',
+                  onPicked: (p) {
+                    _session.rawBoldPath = p;
+                    _session.notifyChanged();
+                  },
+                ),
+                const SizedBox(height: 10),
+                PathPickerField(
+                  controller: _preprocOutCtrl,
+                  label: 'Preprocessing Output Folder',
+                  hint: 'Defaults to <BOLD dir>/preproc',
+                  mode: PickerMode.pickDirectory,
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _templateId,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Clinical Template Cohort',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'mni152_adult',
+                            child: Text(
+                              'Adult TBI / MNI152NLin2009cAsym (2mm)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'older_adult_stroke',
+                            child: Text(
+                              'Older Stroke (Rorden Clinical Toolbox)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'pediatric_nihpd',
+                            child: Text(
+                              'Pediatric TBI / Stroke (NIHPD)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'acute_ct_stroke',
+                            child: Text(
+                              'CT-Only Acute Stroke',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _templateId = v);
+                        },
+                      ),
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'SyNQuick',
-                        child: Text(
-                          'SyNQuick (~2 min)',
-                          overflow: TextOverflow.ellipsis,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _transform,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'ANTs Registration',
+                          border: OutlineInputBorder(),
+                          isDense: true,
                         ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'SyNQuick',
+                            child: Text(
+                              'SyNQuick (~2 min)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'SyN',
+                            child: Text(
+                              'Full SyN (Higher Precision)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _transform = v);
+                        },
                       ),
-                      DropdownMenuItem(
-                        value: 'SyN',
-                        child: Text(
-                          'Full SyN (Higher Precision)',
-                          overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                PathPickerField(
+                  controller: _customTemplateCtrl,
+                  label: 'Optional Custom Template NIfTI (overrides bundled)',
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _lesionMode,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Lesion-Safe Strategy',
+                          border: OutlineInputBorder(),
+                          isDense: true,
                         ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'none',
+                            child: Text(
+                              'None (Healthy Brain)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'cfm',
+                            child: Text(
+                              'Cost Function Masking (Bilateral TBI)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'enantiomorphic',
+                            child: Text(
+                              'Enantiomorphic Healing (Unilateral Stroke)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _lesionMode = v);
+                        },
                       ),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setState(() => _transform = v);
-                    },
-                  ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: PathPickerField(
+                        controller: _preprocLesionCtrl,
+                        label: 'Optional Native T1w Lesion Mask',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: _busy ? null : _runPreprocessing,
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Run ANTsPy Preprocessing'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() => _stepIndex = 2),
+                      icon: const Icon(Icons.brush),
+                      label: const Text('Optional: Lesion Editor (Step 3)'),
+                    ),
+                    if (_session.boldMniPath.isNotEmpty)
+                      FilledButton.tonalIcon(
+                        onPressed: () => setState(() => _stepIndex = 3),
+                        icon: const Icon(Icons.arrow_forward),
+                        label: const Text('Skip to Step 4: Denoise →'),
+                      ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            PathPickerField(
-              controller: _customTemplateCtrl,
-              label: 'Optional Custom Template NIfTI (overrides bundled)',
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _lesionMode,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Lesion-Safe Strategy',
-                      border: OutlineInputBorder(),
-                      isDense: true,
+          ),
+          if (showStageCard) ...[
+            const SizedBox(height: 16),
+            _buildCard(
+              title:
+                  'Live Preprocessing Stage Visualization ($completedCount/${_preprocStages.length} complete)',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: completedCount / _preprocStages.length,
+                      minHeight: 8,
+                      backgroundColor: const Color(0xFF0F172A),
+                      color: const Color(0xFF2DD4BF),
                     ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'none',
-                        child: Text(
-                          'None (Healthy Brain)',
-                          overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      for (var i = 0; i < _preprocStages.length; i++)
+                        _buildStageTile(
+                          index: i,
+                          keyName: _preprocStages[i].$1,
+                          label: _preprocStages[i].$2,
+                          activeIndex: _busy ? completedCount : -1,
                         ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'cfm',
-                        child: Text(
-                          'Cost Function Masking (Bilateral TBI)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      DropdownMenuItem(
-                        value: 'enantiomorphic',
-                        child: Text(
-                          'Enantiomorphic Healing (Unilateral Stroke)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
                     ],
-                    onChanged: (v) {
-                      if (v != null) setState(() => _lesionMode = v);
-                    },
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  flex: 2,
-                  child: PathPickerField(
-                    controller: _preprocLesionCtrl,
-                    label: 'Optional Native T1w Lesion Mask',
-                  ),
-                ),
-              ],
+                  if (_session.boldMniPath.isNotEmpty &&
+                      !_busy &&
+                      completedCount == _preprocStages.length) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF052E16),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF10B981)),
+                      ),
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 12,
+                        runSpacing: 8,
+                        children: [
+                          const Text(
+                            'Preprocessing finished cleanly! All MNI derivatives are loaded.',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFA7F3D0),
+                            ),
+                          ),
+                          FilledButton.icon(
+                            onPressed: () => setState(() => _stepIndex = 3),
+                            icon: const Icon(Icons.arrow_forward),
+                            label: const Text(
+                              'Continue to Step 4: Denoise & Connectivity →',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (_sidecarLog.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ExpansionTile(
+                      title: Text(
+                        'Technical Log (${_sidecarLog.length} lines)',
+                        style: const TextStyle(fontSize: 13.5),
+                      ),
+                      children: [_buildLogBox()],
+                    ),
+                  ],
+                ],
+              ),
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                FilledButton.icon(
-                  onPressed: _busy ? null : _runPreprocessing,
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Run ANTsPy Preprocessing'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: () => setState(() => _stepIndex = 2),
-                  icon: const Icon(Icons.brush),
-                  label: const Text('Next: Lesion Editor'),
-                ),
-              ],
-            ),
-            if (_sidecarLog.isNotEmpty) _buildLogBox(),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStageTile({
+    required int index,
+    required String keyName,
+    required String label,
+    required int activeIndex,
+  }) {
+    final dur = _stageDurations[keyName];
+    final isDone = dur != null;
+    final isActive = !isDone && index == activeIndex;
+    return Container(
+      width: 245,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: isDone
+            ? const Color(0xFF052E16).withValues(alpha: 0.7)
+            : (isActive
+                ? const Color(0xFF0F292E)
+                : const Color(0xFF0F172A)),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDone
+              ? const Color(0xFF10B981)
+              : (isActive ? const Color(0xFF2DD4BF) : Colors.white12),
         ),
+      ),
+      child: Row(
+        children: [
+          if (isDone)
+            const Icon(Icons.check_circle, size: 18, color: Color(0xFF10B981))
+          else if (isActive)
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            const Icon(
+              Icons.radio_button_unchecked,
+              size: 16,
+              color: Color(0xFF475569),
+            ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: isDone || isActive
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                    color: isDone || isActive
+                        ? Colors.white
+                        : const Color(0xFF94A3B8),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  isDone
+                      ? 'Completed in $dur'
+                      : (isActive ? 'Running…' : 'Pending'),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: isDone
+                        ? const Color(0xFF6EE7B7)
+                        : (isActive
+                            ? const Color(0xFF2DD4BF)
+                            : const Color(0xFF64748B)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildStep4Denoise(BuildContext context) {
+    final hasLesionFile = _lesionMaskCtrl.text.trim().isNotEmpty;
+    final lesionActive = _useLesionMask && hasLesionFile;
+    final largeLesionWarning =
+        _pipelineSummary != null && _pipelineSummary!.lesionVolumeMl > 400;
+
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -1246,150 +1845,267 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
           Expanded(
             flex: 5,
             child: SingleChildScrollView(
-              child: _buildCard(
-                title: 'Step 4: Lesion-Aware Rust Denoising & Connectivity',
-                subtitle:
-                    'Clean noisy CSF/WM/motion signals, extract Schaefer-400 parcels, and inspect brain slices & biomarkers.',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: OutlinedButton.icon(
-                        onPressed: _busy
-                            ? null
-                            : () => _openPatientFolder(jumpToDenoise: true),
-                        icon: const Icon(Icons.folder_open),
-                        label: const Text('Auto-Load Preprocessed Folder'),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    PathPickerField(
-                      controller: _boldMniCtrl,
-                      label: '4D BOLD MNI (.nii preferred for mmap / .nii.gz)',
-                      onPicked: (p) {
-                        _session.boldMniPath = p;
-                        _inspectAndRender(p);
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    PathPickerField(
-                      controller: _atlasCtrl,
-                      label: 'Atlas NIfTI (e.g., schaefer400_mni.nii.gz)',
-                      onPicked: (p) => _session.atlasPath = p,
-                    ),
-                    const SizedBox(height: 10),
-                    PathPickerField(
-                      controller: _labelsCtrl,
-                      label: 'Atlas Labels JSON (Homotopic Pairing)',
-                      onPicked: (p) => _session.labelsJsonPath = p,
-                    ),
-                    const SizedBox(height: 10),
-                    PathPickerField(
-                      controller: _lesionMaskCtrl,
-                      label: 'Optional Normalized Lesion Mask',
-                      onPicked: (p) => _session.lesionMaskPath = p,
-                    ),
-                    const SizedBox(height: 10),
-                    PathPickerField(
-                      controller: _wmCtrl,
-                      label: 'WM Mask (aCompCor)',
-                      onPicked: (p) => _session.wmMaskPath = p,
-                    ),
-                    const SizedBox(height: 10),
-                    PathPickerField(
-                      controller: _csfCtrl,
-                      label: 'CSF Mask (aCompCor)',
-                      onPicked: (p) => _session.csfMaskPath = p,
-                    ),
-                    const SizedBox(height: 10),
-                    PathPickerField(
-                      controller: _confoundsCtrl,
-                      label: 'Confounds TSV (Motion + FD)',
-                      onPicked: (p) => _session.confoundsPath = p,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Bandpass: ${_lowHz.toStringAsFixed(3)}–${_highHz.toStringAsFixed(2)} Hz | '
-                      'FD Scrub: ${_fdThresholdMm.toStringAsFixed(2)} mm | '
-                      'Max ROI Damage: ${_maxDamagePct.toStringAsFixed(0)}%',
-                    ),
-                    Slider(
-                      value: _maxDamagePct,
-                      min: 10,
-                      max: 100,
-                      divisions: 18,
-                      label: 'Max Damage ${_maxDamagePct.round()}%',
-                      onChanged: (v) => setState(() => _maxDamagePct = v),
-                    ),
-                    Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildCard(
+                    title: 'Step 4A: Preprocessed Inputs & Lesion Mode',
+                    subtitle:
+                        'Verify your MNI-space inputs below, then click Run Denoising to compute connectivity biomarkers.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Expanded(
-                          child: Slider(
-                            value: _fdThresholdMm,
-                            min: 0.2,
-                            max: 2.0,
-                            divisions: 18,
-                            label: 'FD ${_fdThresholdMm.toStringAsFixed(1)}mm',
-                            onChanged: (v) =>
-                                setState(() => _fdThresholdMm = v),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _inputStatusChip(
+                              'BOLD MNI',
+                              _boldMniCtrl.text.trim(),
+                              required: true,
+                            ),
+                            _inputStatusChip(
+                              'Atlas',
+                              _atlasCtrl.text.trim(),
+                              required: true,
+                            ),
+                            _inputStatusChip('WM Mask', _wmCtrl.text.trim()),
+                            _inputStatusChip('CSF Mask', _csfCtrl.text.trim()),
+                            _inputStatusChip(
+                              'Confounds',
+                              _confoundsCtrl.text.trim(),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0F172A),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: lesionActive
+                                  ? const Color(0xFFF59E0B)
+                                  : Colors.white12,
+                            ),
+                          ),
+                          child: SwitchListTile(
+                            dense: true,
+                            value: lesionActive,
+                            onChanged: hasLesionFile
+                                ? (val) {
+                                    setState(() => _useLesionMask = val);
+                                    if (_boldMniCtrl.text.trim().isNotEmpty) {
+                                      _inspectAndRender();
+                                    }
+                                  }
+                                : null,
+                            title: const Text(
+                              'Apply Lesion Mask (Exclude Damaged ROIs)',
+                              style: TextStyle(fontSize: 13.5),
+                            ),
+                            subtitle: Text(
+                              hasLesionFile
+                                  ? (lesionActive
+                                      ? 'Active: ${FmriSessionState.basename(_lesionMaskCtrl.text.trim())}'
+                                      : 'Disabled — analyzing all 400 atlas ROIs')
+                                  : 'No lesion mask loaded (create one in Step 3 for TBI/stroke)',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF94A3B8),
+                              ),
+                            ),
                           ),
                         ),
-                        Expanded(
-                          child: Slider(
+                        if (largeLesionWarning) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF451A03),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFF59E0B)),
+                            ),
+                            child: Wrap(
+                              alignment: WrapAlignment.spaceBetween,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                Text(
+                                  'Mask covers ${_pipelineSummary!.lesionVolumeMl.toStringAsFixed(0)} mL and excluded ${_pipelineSummary!.nExcludedRois} ROIs.',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    color: Color(0xFFFDE68A),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    setState(() => _useLesionMask = false);
+                                    _runPipeline();
+                                  },
+                                  child: const Text('Re-Run Without Mask'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 8),
+                        ExpansionTile(
+                          tilePadding: EdgeInsets.zero,
+                          title: const Text(
+                            'Edit Individual Input Paths',
+                            style: TextStyle(fontSize: 13.5),
+                          ),
+                          children: [
+                            const SizedBox(height: 6),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: OutlinedButton.icon(
+                                onPressed: _busy
+                                    ? null
+                                    : () => _openPatientFolder(
+                                        jumpToDenoise: true,
+                                      ),
+                                icon: const Icon(Icons.folder_open),
+                                label: const Text('Auto-Load Preprocessed Folder'),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            PathPickerField(
+                              controller: _boldMniCtrl,
+                              label:
+                                  '4D BOLD MNI (.nii preferred for mmap / .nii.gz)',
+                              onPicked: (p) {
+                                _session.boldMniPath = p;
+                                _inspectAndRender(p);
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            PathPickerField(
+                              controller: _atlasCtrl,
+                              label:
+                                  'Atlas NIfTI (e.g., schaefer400_mni.nii.gz)',
+                              onPicked: (p) => _session.atlasPath = p,
+                            ),
+                            const SizedBox(height: 10),
+                            PathPickerField(
+                              controller: _labelsCtrl,
+                              label: 'Atlas Labels JSON (Homotopic Pairing)',
+                              onPicked: (p) => _session.labelsJsonPath = p,
+                            ),
+                            const SizedBox(height: 10),
+                            PathPickerField(
+                              controller: _lesionMaskCtrl,
+                              label: 'Optional Normalized Lesion Mask',
+                              onPicked: (p) {
+                                _session.lesionMaskPath = p;
+                                setState(() => _useLesionMask = true);
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            PathPickerField(
+                              controller: _wmCtrl,
+                              label: 'WM Mask (aCompCor)',
+                              onPicked: (p) => _session.wmMaskPath = p,
+                            ),
+                            const SizedBox(height: 10),
+                            PathPickerField(
+                              controller: _csfCtrl,
+                              label: 'CSF Mask (aCompCor)',
+                              onPicked: (p) => _session.csfMaskPath = p,
+                            ),
+                            const SizedBox(height: 10),
+                            PathPickerField(
+                              controller: _confoundsCtrl,
+                              label: 'Confounds TSV (Motion + FD)',
+                              onPicked: (p) => _session.confoundsPath = p,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildCard(
+                    title: 'Step 4B: Denoising Parameters & Run',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildSliderRow(
+                          title: 'Bandpass Low-Pass Cutoff',
+                          valueLabel:
+                              '${_lowHz.toStringAsFixed(3)}–${_highHz.toStringAsFixed(2)} Hz',
+                          slider: Slider(
                             value: _highHz,
                             min: 0.05,
                             max: 0.20,
                             divisions: 15,
-                            label: 'LP ${_highHz.toStringAsFixed(2)}Hz',
+                            label: '${_highHz.toStringAsFixed(2)} Hz',
                             onChanged: (v) => setState(() => _highHz = v),
                           ),
                         ),
+                        _buildSliderRow(
+                          title: 'Motion Scrubbing (FD Threshold)',
+                          valueLabel: '${_fdThresholdMm.toStringAsFixed(2)} mm',
+                          slider: Slider(
+                            value: _fdThresholdMm,
+                            min: 0.2,
+                            max: 2.0,
+                            divisions: 18,
+                            label: '${_fdThresholdMm.toStringAsFixed(1)} mm',
+                            onChanged: (v) =>
+                                setState(() => _fdThresholdMm = v),
+                          ),
+                        ),
+                        _buildSliderRow(
+                          title: 'Max ROI Lesion Damage Exclusion',
+                          valueLabel: lesionActive
+                              ? '${_maxDamagePct.round()}%'
+                              : 'Inactive',
+                          slider: Slider(
+                            value: _maxDamagePct,
+                            min: 10,
+                            max: 100,
+                            divisions: 18,
+                            label: '${_maxDamagePct.round()}%',
+                            onChanged: lesionActive
+                                ? (v) => setState(() => _maxDamagePct = v)
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        FilledButton.icon(
+                          onPressed: _busy ? null : _runPipeline,
+                          icon: const Icon(Icons.play_arrow),
+                          label: const Text(
+                            'Run Denoising & Generate Results →',
+                          ),
+                        ),
+                        if (_pipelineSummary != null) ...[
+                          const SizedBox(height: 10),
+                          OutlinedButton.icon(
+                            onPressed: () => setState(() => _stepIndex = 4),
+                            icon: const Icon(Icons.insights),
+                            label: const Text(
+                              'View Matrix, Carpet Plot & Export (Step 5) →',
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    FilledButton.icon(
-                      onPressed: _busy ? null : _runPipeline,
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text(
-                        'Run Lesion-Aware Denoising & Biomarkers',
-                      ),
-                    ),
-                    if (_pipelineSummary != null) ...[
-                      const SizedBox(height: 14),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0F172A),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'Intact ROIs: ${_pipelineSummary!.nIntactRois}/${_pipelineSummary!.nRois} '
-                          '(Excluded: ${_pipelineSummary!.nExcludedRois}) | '
-                          'mmap: ${_pipelineSummary!.usedMmap} | '
-                          'Total: ${_pipelineSummary!.totalMs.toStringAsFixed(1)} ms\n'
-                          'Lesion: ${_pipelineSummary!.lesionVolumeMl.toStringAsFixed(2)} mL '
-                          '(${_pipelineSummary!.dominantHemisphere}) | '
-                          'Mean |FC|: ${_pipelineSummary!.meanAbsFc.toStringAsFixed(4)}\n'
-                          'Global Efficiency: ${_pipelineSummary!.globalEfficiency.toStringAsFixed(4)} | '
-                          'Node Strength: ${_pipelineSummary!.meanNodeStrength.toStringAsFixed(2)}\n'
-                          'Homotopic FC: ${_pipelineSummary!.meanHomotopicFc.toStringAsFixed(4)} | '
-                          'Laterality Index: ${_pipelineSummary!.lateralityIndex.toStringAsFixed(4)} | '
-                          'Seed |r|: ${_pipelineSummary!.lesionSeedMeanAbsR.toStringAsFixed(4)}',
-                          style: const TextStyle(color: Color(0xFF2DD4BF)),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
           const SizedBox(width: 16),
           Expanded(
-            flex: 4,
+            flex: 5,
             child: _buildCard(
-              title: 'Zero-Copy RGBA Slice Viewport',
+              title: 'Zero-Copy Brain Slice Viewport',
+              subtitle: _headerSummary != null
+                  ? 'Volume: ${_headerSummary!.dims.join(" × ")} | TR: ${_headerSummary!.trSec.toStringAsFixed(2)}s'
+                  : 'Inspect slices and lesion overlay before denoising.',
               expandChild: true,
               child: Column(
                 children: [
@@ -1434,25 +2150,45 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                   ),
                   const SizedBox(height: 8),
                   Expanded(
-                    child: Center(
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0B1120),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      padding: const EdgeInsets.all(8),
                       child: _sliceImage != null
-                          ? RawImage(
-                              image: _sliceImage,
-                              fit: BoxFit.contain,
-                              filterQuality: FilterQuality.none,
+                          ? SizedBox.expand(
+                              child: FittedBox(
+                                fit: BoxFit.contain,
+                                child: RawImage(
+                                  image: _sliceImage,
+                                  filterQuality: FilterQuality.none,
+                                ),
+                              ),
                             )
-                          : const Text(
-                              'Browse a 3D/4D NIfTI volume or open a subject folder\n'
-                              'to inspect slices with 60/120 FPS Rust RGBA rendering.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Color(0xFF94A3B8)),
+                          : const Center(
+                              child: Text(
+                                'Load a preprocessed folder or NIfTI file\n'
+                                'to inspect full-size brain slices at 60/120 FPS.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Color(0xFF94A3B8)),
+                              ),
                             ),
                     ),
                   ),
                   if (_headerSummary != null) ...[
+                    const SizedBox(height: 8),
                     Row(
                       children: [
-                        Text('Slice: $_sliceIndex'),
+                        SizedBox(
+                          width: 90,
+                          child: Text(
+                            'Slice: $_sliceIndex / $_maxSlice',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ),
                         Expanded(
                           child: Slider(
                             value: _sliceIndex.toDouble().clamp(
@@ -1471,7 +2207,13 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                     if (_maxTimepoint > 0)
                       Row(
                         children: [
-                          Text('Vol t: $_timepoint'),
+                          SizedBox(
+                            width: 90,
+                            child: Text(
+                              'Vol t: $_timepoint / $_maxTimepoint',
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
                           Expanded(
                             child: Slider(
                               value: _timepoint.toDouble().clamp(
@@ -1494,6 +2236,385 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStep5Results(BuildContext context) {
+    final s = _pipelineSummary;
+    if (s == null) {
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Card(
+            color: const Color(0xFF1E293B),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.insights,
+                    size: 52,
+                    color: Color(0xFF2DD4BF),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Step 5: Results & Biomarkers Dashboard',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Run Denoising & Biomarkers in Step 4 to visualize your 400×400 Functional Connectivity matrix, ROI Timeseries Carpet Plot, and exported CSV/JSON/Markdown reports.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Color(0xFF94A3B8)),
+                  ),
+                  const SizedBox(height: 18),
+                  FilledButton.icon(
+                    onPressed: () => setState(() => _stepIndex = 3),
+                    icon: const Icon(Icons.tune),
+                    label: const Text('Go to Step 4: Denoise & Compute →'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildKpiCard(
+                label: 'Intact ROIs',
+                value: '${s.nIntactRois} / ${s.nRois}',
+                sub: s.nExcludedRois > 0
+                    ? '${s.nExcludedRois} excluded by mask'
+                    : 'All parcels included',
+                color: const Color(0xFF2DD4BF),
+              ),
+              _buildKpiCard(
+                label: 'Mean |FC|',
+                value: s.meanAbsFc.toStringAsFixed(3),
+                sub: 'Absolute off-diagonal r',
+                color: const Color(0xFF38BDF8),
+              ),
+              _buildKpiCard(
+                label: 'Global Efficiency',
+                value: s.globalEfficiency.toStringAsFixed(3),
+                sub: 'NaN-safe graph integration',
+                color: const Color(0xFF34D399),
+              ),
+              _buildKpiCard(
+                label: 'Homotopic FC',
+                value: s.meanHomotopicFc.toStringAsFixed(3),
+                sub: 'Left–right mirror connectivity',
+                color: const Color(0xFFA78BFA),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              Chip(
+                label: Text(
+                  'Node Strength: ${s.meanNodeStrength.toStringAsFixed(2)}',
+                ),
+              ),
+              Chip(
+                label: Text(
+                  'Laterality Index: ${s.lateralityIndex.toStringAsFixed(3)}',
+                ),
+              ),
+              Chip(
+                label: Text(
+                  'Lesion Seed |r|: ${s.lesionSeedMeanAbsR.toStringAsFixed(3)}',
+                ),
+              ),
+              Chip(
+                label: Text(
+                  'Lesion: ${s.lesionVolumeMl.toStringAsFixed(1)} mL (${s.dominantHemisphere})',
+                ),
+              ),
+              Chip(
+                label: Text(
+                  'Volumes: ${s.nTimepoints} @ ${s.trSec.toStringAsFixed(2)}s',
+                ),
+              ),
+              Chip(
+                label: Text(
+                  'Rust Engine: ${s.totalMs.toStringAsFixed(1)} ms (mmap: ${s.usedMmap})',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _buildCard(
+                  title:
+                      'Functional Connectivity Matrix (${s.nRois} × ${s.nRois})',
+                  subtitle:
+                      'Blue = Negative (r = -1), White = 0, Red = Positive (r = +1), Dark = Lesion-excluded.',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        height: 300,
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0B1120),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: _fcImage != null
+                            ? SizedBox.expand(
+                                child: FittedBox(
+                                  fit: BoxFit.contain,
+                                  child: RawImage(
+                                    image: _fcImage,
+                                    filterQuality: FilterQuality.none,
+                                  ),
+                                ),
+                              )
+                            : const Center(child: Text('No matrix preview')),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Text('-1.0', style: TextStyle(fontSize: 11)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Container(
+                              height: 10,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color(0xFF1D4ED8),
+                                    Color(0xFFF8FAFC),
+                                    Color(0xFFDC2626),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text('+1.0', style: TextStyle(fontSize: 11)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildCard(
+                  title:
+                      'Denoised ROI Timeseries Carpet Plot (${s.nTimepoints} vols × ${s.nRois} ROIs)',
+                  subtitle:
+                      'X-axis = scan timepoints, Y-axis = atlas parcels (z-scored BOLD: dark = -2.5 SD, bright = +2.5 SD).',
+                  child: Container(
+                    height: 326,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0B1120),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: _carpetImage != null
+                        ? SizedBox.expand(
+                            child: FittedBox(
+                              fit: BoxFit.fill,
+                              child: RawImage(
+                                image: _carpetImage,
+                                filterQuality: FilterQuality.none,
+                              ),
+                            ),
+                          )
+                        : const Center(child: Text('No carpet preview')),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _buildCard(
+            title: 'Exported Outputs & What to Do Next',
+            subtitle: s.exportedDir != null
+                ? 'Automatically saved to: ${s.exportedDir}'
+                : 'Ready to inspect and analyze.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      avatar: Icon(
+                        Icons.table_chart_outlined,
+                        size: 16,
+                        color: Color(0xFF2DD4BF),
+                      ),
+                      label: Text('fc_matrix.csv'),
+                    ),
+                    Chip(
+                      avatar: Icon(
+                        Icons.timeline,
+                        size: 16,
+                        color: Color(0xFF2DD4BF),
+                      ),
+                      label: Text('denoised_timeseries.csv'),
+                    ),
+                    Chip(
+                      avatar: Icon(
+                        Icons.data_object,
+                        size: 16,
+                        color: Color(0xFF2DD4BF),
+                      ),
+                      label: Text('biomarkers_summary.json'),
+                    ),
+                    Chip(
+                      avatar: Icon(
+                        Icons.description_outlined,
+                        size: 16,
+                        color: Color(0xFF2DD4BF),
+                      ),
+                      label: Text('clinical_report.md'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    if (s.exportedDir != null)
+                      FilledButton.icon(
+                        onPressed: () => _openDirectoryInOs(s.exportedDir!),
+                        icon: const Icon(Icons.folder_open),
+                        label: const Text('Open Results Folder'),
+                      ),
+                    if (s.exportedDir != null)
+                      OutlinedButton.icon(
+                        onPressed: _saveReportAs,
+                        icon: const Icon(Icons.save_alt),
+                        label: const Text('Save Clinical Report As…'),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: () => setState(() => _stepIndex = 3),
+                      icon: const Icon(Icons.tune),
+                      label: const Text('Adjust Parameters (Step 4)'),
+                    ),
+                    TextButton.icon(
+                      onPressed: _resetSession,
+                      icon: const Icon(Icons.restart_alt),
+                      label: const Text('Analyze Another Patient'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKpiCard({
+    required String label,
+    required String value,
+    required String sub,
+    required Color color,
+  }) {
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            sub,
+            style: const TextStyle(fontSize: 11.5, color: Color(0xFFCBD5E1)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _inputStatusChip(String label, String path, {bool required = false}) {
+    final present = path.isNotEmpty;
+    return Chip(
+      avatar: Icon(
+        present
+            ? Icons.check_circle
+            : (required ? Icons.error_outline : Icons.remove_circle_outline),
+        size: 16,
+        color: present
+            ? const Color(0xFF10B981)
+            : (required ? const Color(0xFFF59E0B) : const Color(0xFF64748B)),
+      ),
+      label: Text(
+        present ? '$label: ${FmriSessionState.basename(path)}' : '$label: None',
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  Widget _buildSliderRow({
+    required String title,
+    required String valueLabel,
+    required Widget slider,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(title, style: const TextStyle(fontSize: 13)),
+            Text(
+              valueLabel,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF2DD4BF),
+              ),
+            ),
+          ],
+        ),
+        slider,
+      ],
     );
   }
 

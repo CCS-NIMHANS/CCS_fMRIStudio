@@ -78,6 +78,12 @@ pub struct LesionPipelineSummary {
     pub lesion_seed_mean_abs_r: f64,
     pub mean_abs_fc: f64,
     pub total_ms: f64,
+    pub fc_preview_rgba: Vec<u8>,
+    pub fc_preview_size: u32,
+    pub carpet_rgba: Vec<u8>,
+    pub carpet_width: u32,
+    pub carpet_height: u32,
+    pub exported_dir: Option<String>,
 }
 
 fn to_lesion_dto(s: LesionSummary) -> LesionSummaryDto {
@@ -387,6 +393,154 @@ pub fn run_roi_denoise_pipeline(
     })
 }
 
+fn lerp_u8(a: u8, b: u8, t: f64) -> u8 {
+    let v = (a as f64) + ((b as f64) - (a as f64)) * t.clamp(0.0, 1.0);
+    v.round().clamp(0.0, 255.0) as u8
+}
+
+/// Renders an N x N Pearson correlation matrix (`[-1, 1]`) into RGBA pixels
+/// using a blue (-1) -> white (0) -> crimson (+1) diverging colormap.
+#[flutter_rust_bridge::frb(ignore)]
+pub(crate) fn render_fc_matrix_rgba(fc: ndarray::ArrayView2<'_, f64>) -> (u32, Vec<u8>) {
+    let n = fc.nrows().min(fc.ncols());
+    let mut rgba = Vec::with_capacity(n * n * 4);
+    for i in 0..n {
+        for j in 0..n {
+            let val = fc[[i, j]];
+            if !val.is_finite() {
+                rgba.extend_from_slice(&[30, 41, 59, 255]); // dark slate (#1E293B)
+            } else if val >= 0.0 {
+                let t = val.clamp(0.0, 1.0);
+                rgba.push(lerp_u8(248, 220, t));
+                rgba.push(lerp_u8(250, 38, t));
+                rgba.push(lerp_u8(252, 38, t));
+                rgba.push(255);
+            } else {
+                let t = (-val).clamp(0.0, 1.0);
+                rgba.push(lerp_u8(248, 29, t));
+                rgba.push(lerp_u8(250, 78, t));
+                rgba.push(lerp_u8(252, 216, t));
+                rgba.push(255);
+            }
+        }
+    }
+    (n as u32, rgba)
+}
+
+/// Renders denoised ROI timeseries `(n_timepoints, n_rois)` into a carpet plot
+/// (`width = n_timepoints`, `height = n_rois`), z-scoring each ROI row.
+#[flutter_rust_bridge::frb(ignore)]
+pub(crate) fn render_carpet_rgba(clean_ts: ndarray::ArrayView2<'_, f64>) -> (u32, u32, Vec<u8>) {
+    let (nt, n_rois) = clean_ts.dim();
+    let mut rgba = vec![0u8; nt * n_rois * 4];
+    for r in 0..n_rois {
+        let mut sum = 0.0_f64;
+        let mut count = 0_usize;
+        let mut has_nan = false;
+        for t in 0..nt {
+            let v = clean_ts[[t, r]];
+            if v.is_finite() {
+                sum += v;
+                count += 1;
+            } else {
+                has_nan = true;
+            }
+        }
+        if has_nan || count < 2 {
+            for t in 0..nt {
+                let idx = (r * nt + t) * 4;
+                rgba[idx] = 51;
+                rgba[idx + 1] = 35;
+                rgba[idx + 2] = 40;
+                rgba[idx + 3] = 255;
+            }
+            continue;
+        }
+        let mean = sum / (count as f64);
+        let var: f64 = (0..nt)
+            .map(|t| {
+                let d = clean_ts[[t, r]] - mean;
+                d * d
+            })
+            .sum::<f64>()
+            / (count as f64);
+        let std_dev = var.sqrt().max(1e-9);
+        for t in 0..nt {
+            let z = ((clean_ts[[t, r]] - mean) / std_dev).clamp(-2.5, 2.5);
+            let u = (z + 2.5) / 5.0; // 0..1
+            let idx = (r * nt + t) * 4;
+            rgba[idx] = lerp_u8(15, 248, u);
+            rgba[idx + 1] = lerp_u8(23, 250, u);
+            rgba[idx + 2] = lerp_u8(42, 252, u);
+            rgba[idx + 3] = 255;
+        }
+    }
+    (nt as u32, n_rois as u32, rgba)
+}
+
+#[flutter_rust_bridge::frb(ignore)]
+pub(crate) fn export_lesion_pipeline_outputs(
+    out_dir: &Path,
+    fc: ndarray::ArrayView2<'_, f64>,
+    clean_ts: ndarray::ArrayView2<'_, f64>,
+    summary_json: &serde_json::Value,
+    report_md: &str,
+) -> Result<()> {
+    use std::io::{BufWriter, Write};
+
+    std::fs::create_dir_all(out_dir)
+        .with_context(|| format!("Failed to create export folder {}", out_dir.display()))?;
+
+    {
+        let f = std::fs::File::create(out_dir.join("fc_matrix.csv"))?;
+        let mut w = BufWriter::new(f);
+        let (nr, nc) = fc.dim();
+        for i in 0..nr {
+            for j in 0..nc {
+                if j > 0 {
+                    w.write_all(b",")?;
+                }
+                let v = fc[[i, j]];
+                if v.is_finite() {
+                    write!(w, "{v:.5}")?;
+                } else {
+                    w.write_all(b"NaN")?;
+                }
+            }
+            w.write_all(b"\n")?;
+        }
+        w.flush()?;
+    }
+
+    {
+        let f = std::fs::File::create(out_dir.join("denoised_timeseries.csv"))?;
+        let mut w = BufWriter::new(f);
+        let (nt, nr) = clean_ts.dim();
+        for t in 0..nt {
+            for r in 0..nr {
+                if r > 0 {
+                    w.write_all(b",")?;
+                }
+                let v = clean_ts[[t, r]];
+                if v.is_finite() {
+                    write!(w, "{v:.5}")?;
+                } else {
+                    w.write_all(b"NaN")?;
+                }
+            }
+            w.write_all(b"\n")?;
+        }
+        w.flush()?;
+    }
+
+    std::fs::write(
+        out_dir.join("biomarkers_summary.json"),
+        serde_json::to_string_pretty(summary_json)?,
+    )?;
+    std::fs::write(out_dir.join("clinical_report.md"), report_md)?;
+    Ok(())
+}
+
 pub fn run_lesion_aware_pipeline(
     bold_path: String,
     atlas_path: String,
@@ -400,6 +554,7 @@ pub fn run_lesion_aware_pipeline(
     fd_threshold_mm: f64,
     max_damage_pct: f64,
     lesion_dilate_voxels: u32,
+    out_dir: Option<String>,
 ) -> Result<LesionPipelineSummary> {
     let t_total = Instant::now();
     let vol = load_bold_volume(Path::new(&bold_path))?;
@@ -528,6 +683,77 @@ pub fn run_lesion_aware_pipeline(
         }
     }
     let mean_abs_fc = if off_diag > 0 { abs_sum / (off_diag as f64) } else { 0.0 };
+    let total_ms = t_total.elapsed().as_secs_f64() * 1000.0;
+
+    let (fc_preview_size, fc_preview_rgba) = render_fc_matrix_rgba(fc.view());
+    let (carpet_width, carpet_height, carpet_rgba) = render_carpet_rgba(clean_ts.view());
+
+    let exported_dir = match out_dir {
+        Some(ref dir) if !dir.trim().is_empty() => {
+            let summary_json = serde_json::json!({
+                "bold_path": bold_path,
+                "atlas_path": atlas_path,
+                "n_timepoints": nt,
+                "n_rois": n_rois,
+                "n_intact_rois": graph.n_intact_nodes,
+                "n_excluded_rois": graph.n_excluded_nodes,
+                "tr_sec": tr_sec,
+                "used_mmap": hdr.used_mmap,
+                "low_hz": low_hz,
+                "high_hz": high_hz,
+                "fd_threshold_mm": fd_threshold_mm,
+                "max_damage_pct": max_damage_pct,
+                "lesion_volume_ml": parc.total_lesion_volume_ml,
+                "dominant_hemisphere": dominant_hemi,
+                "global_efficiency": graph.global_efficiency,
+                "mean_node_strength": graph.mean_node_strength,
+                "mean_homotopic_fc": mean_homotopic_fc,
+                "laterality_index": laterality_index,
+                "lesion_seed_mean_abs_r": lesion_seed_mean_abs_r,
+                "mean_abs_fc": mean_abs_fc,
+                "total_ms": total_ms,
+            });
+            let report_md = format!(
+                "# CCS fMRI Studio — Clinical & Connectivity Report\n\n\
+                | Metric | Value |\n\
+                | :--- | :--- |\n\
+                | **4D BOLD Input** | `{bold_path}` |\n\
+                | **Timepoints / TR** | {nt} volumes @ {tr_sec:.2} s |\n\
+                | **Intact / Total ROIs** | {}/{} (Excluded: {}) |\n\
+                | **Lesion Volume** | {:.2} mL ({}) |\n\
+                | **Mean |FC|** | {:.4} |\n\
+                | **Global Efficiency** | {:.4} |\n\
+                | **Mean Node Strength** | {:.2} |\n\
+                | **Homotopic FC** | {:.4} |\n\
+                | **Laterality Index** | {:.4} |\n\
+                | **Lesion-Seed Mean |r|** | {:.4} |\n\
+                | **Rust Processing Time** | {:.1} ms (mmap: {}) |\n\n\
+                Generated files: `fc_matrix.csv`, `denoised_timeseries.csv`, `biomarkers_summary.json`, `clinical_report.md`\n",
+                graph.n_intact_nodes,
+                n_rois,
+                graph.n_excluded_nodes,
+                parc.total_lesion_volume_ml,
+                dominant_hemi,
+                mean_abs_fc,
+                graph.global_efficiency,
+                graph.mean_node_strength,
+                mean_homotopic_fc,
+                laterality_index,
+                lesion_seed_mean_abs_r,
+                total_ms,
+                hdr.used_mmap,
+            );
+            export_lesion_pipeline_outputs(
+                Path::new(dir.trim()),
+                fc.view(),
+                clean_ts.view(),
+                &summary_json,
+                &report_md,
+            )?;
+            Some(dir.trim().to_string())
+        }
+        _ => None,
+    };
 
     Ok(LesionPipelineSummary {
         n_timepoints: nt as u32,
@@ -544,6 +770,12 @@ pub fn run_lesion_aware_pipeline(
         laterality_index,
         lesion_seed_mean_abs_r,
         mean_abs_fc,
-        total_ms: t_total.elapsed().as_secs_f64() * 1000.0,
+        total_ms,
+        fc_preview_rgba,
+        fc_preview_size,
+        carpet_rgba,
+        carpet_width,
+        carpet_height,
+        exported_dir,
     })
 }
