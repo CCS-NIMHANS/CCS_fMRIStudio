@@ -1,0 +1,30 @@
+[package]
+name = "ccs_fmri_core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "ccs_fmri_core"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[[bin]]
+name = "bench_denoise"
+path = "src/bin/bench_denoise.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+faer = "0.24"
+flate2 = "1.1"
+flutter_rust_bridge = "=2.13.0"
+memmap2 = "0.9"
+ndarray = "0.17"
+nifti = { version = "0.18", features = ["ndarray_volumes"] }
+rayon = "1.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

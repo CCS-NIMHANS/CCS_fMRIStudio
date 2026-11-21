@@ -1,0 +1,357 @@
+name: Build desktop apps
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: Optional note for this manual desktop build
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  validate-release:
+    name: Validate version and release notes
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Validate version metadata
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(awk '/^version:/ {print $2; exit}' pubspec.yaml)"
+          version="${version%%+*}"
+          test -n "$version"
+          engine_version="$(awk -F'"' '/^version = / {print $2; exit}' rust/Cargo.toml)"
+          if [[ "$engine_version" != "$version" ]]; then
+            echo "Version mismatch: pubspec=$version engine=$engine_version" >&2
+            exit 1
+          fi
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match pubspec version v$version" >&2
+            exit 1
+          fi
+          bash scripts/release_notes.sh "$version" > release-notes.md
+          test -s release-notes.md
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Upload validated release notes
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-notes
+          path: release-notes.md
+          if-no-files-found: error
+          retention-days: 14
+
+  build-macos:
+    name: macOS
+    needs: [validate-release]
+    runs-on: macos-15
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(toJSON(github.event.commits), '[build desktop]')
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Build and test Rust core (macOS release)
+        run: |
+          cargo build --release --locked
+          cargo test --release --locked
+        working-directory: rust
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.9
+          channel: stable
+          cache: true
+          cache-key: flutter-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Flutter unit tests
+        run: flutter test
+
+      - name: Build macOS Flutter app
+        run: flutter build macos --release
+
+      - name: Embed Rust library and CLI into macOS .app bundle
+        run: |
+          APP="build/macos/Build/Products/Release/ccs_fmri_studio.app"
+          mkdir -p "$APP/Contents/Frameworks"
+          cp rust/target/release/libccs_fmri_core.dylib "$APP/Contents/Frameworks/libccs_fmri_core.dylib"
+          install_name_tool -id "@rpath/libccs_fmri_core.dylib" "$APP/Contents/Frameworks/libccs_fmri_core.dylib"
+          cp rust/target/release/bench_denoise "$APP/Contents/MacOS/bench_denoise"
+          chmod +x "$APP/Contents/MacOS/bench_denoise"
+          test -f "$APP/Contents/Frameworks/libccs_fmri_core.dylib"
+          test -x "$APP/Contents/MacOS/bench_denoise"
+
+      - name: Ad-hoc sign macOS app bundle
+        run: |
+          APP="build/macos/Build/Products/Release/ccs_fmri_studio.app"
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Package macOS app as ZIP
+        run: |
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent \
+            "build/macos/Build/Products/Release/ccs_fmri_studio.app" \
+            dist/CCSfMRIStudio-macos.zip
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: CCSfMRIStudio-macos
+          path: dist/CCSfMRIStudio-macos.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows:
+    name: Windows
+    needs: [validate-release]
+    runs-on: windows-2022
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(toJSON(github.event.commits), '[build desktop]')
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Build and test Rust core (Windows release)
+        run: |
+          cargo build --release --locked
+          cargo test --release --locked
+        working-directory: rust
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.9
+          channel: stable
+          cache: true
+          cache-key: flutter-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Flutter unit tests
+        run: flutter test
+
+      - name: Build Windows Flutter app
+        run: flutter build windows --release
+
+      - name: Copy Rust library and CLI into Windows release bundle
+        shell: pwsh
+        run: |
+          $dest = "build\windows\x64\runner\Release"
+          Copy-Item rust\target\release\ccs_fmri_core.dll "$dest\ccs_fmri_core.dll"
+          Copy-Item rust\target\release\bench_denoise.exe "$dest\bench_denoise.exe"
+          if (-not (Test-Path "$dest\ccs_fmri_core.dll")) { exit 1 }
+          if (-not (Test-Path "$dest\bench_denoise.exe")) { exit 1 }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "$dest\*" -DestinationPath dist\CCSfMRIStudio-windows-x64.zip -Force
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: CCSfMRIStudio-windows
+          path: dist\CCSfMRIStudio-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  build-linux:
+    name: Linux
+    needs: [validate-release]
+    runs-on: ubuntu-22.04
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(toJSON(github.event.commits), '[build desktop]')
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libblkid-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Build and test Rust core (Linux release)
+        run: |
+          cargo build --release --locked
+          cargo test --release --locked
+        working-directory: rust
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.9
+          channel: stable
+          cache: true
+          cache-key: flutter-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+
+      - name: Enable Linux desktop support
+        run: flutter config --enable-linux-desktop
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Dart code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run Flutter unit tests
+        run: flutter test
+
+      - name: Build Linux Flutter app
+        run: flutter build linux --release
+
+      - name: Copy Rust library and CLI into Linux bundle and archive
+        run: |
+          BUNDLE="build/linux/x64/release/bundle"
+          mkdir -p "$BUNDLE/lib" dist
+          cp rust/target/release/libccs_fmri_core.so "$BUNDLE/lib/libccs_fmri_core.so"
+          cp rust/target/release/bench_denoise "$BUNDLE/bench_denoise"
+          strip "$BUNDLE/lib/libccs_fmri_core.so" "$BUNDLE/bench_denoise"
+          chmod +x "$BUNDLE/bench_denoise"
+          test -f "$BUNDLE/lib/libccs_fmri_core.so"
+          test -x "$BUNDLE/bench_denoise"
+          tar -C "$BUNDLE" -czf dist/CCSfMRIStudio-linux-x64.tar.gz .
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: CCSfMRIStudio-linux
+          path: dist/CCSfMRIStudio-linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Release Assets
+    needs: [validate-release, build-macos, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) &&
+      (startsWith(github.ref, 'refs/tags/v') || contains(toJSON(github.event.commits), '[build desktop]'))
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Download release notes
+        uses: actions/download-artifact@v8
+        with:
+          name: release-notes
+          path: release
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: CCSfMRIStudio-macos
+          path: dist
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: CCSfMRIStudio-windows
+          path: dist
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: CCSfMRIStudio-linux
+          path: dist
+
+      - name: Generate Release tag and title
+        id: release_info
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "title=Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "title=Latest Development Build" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate artifact checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum \
+            CCSfMRIStudio-macos.zip \
+            CCSfMRIStudio-windows-x64.zip \
+            CCSfMRIStudio-linux-x64.tar.gz > SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: ${{ steps.release_info.outputs.title }}
+          prerelease: ${{ steps.release_info.outputs.prerelease == 'true' }}
+          files: |
+            dist/CCSfMRIStudio-macos.zip
+            dist/CCSfMRIStudio-windows-x64.zip
+            dist/CCSfMRIStudio-linux-x64.tar.gz
+            dist/SHA256SUMS.txt
+          draft: false
+          make_latest: ${{ steps.release_info.outputs.tag != 'latest' && 'true' || 'false' }}
+          body_path: release/release-notes.md
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
