@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <b>Current version: 0.2.0</b> ·
+  <b>Current version: 0.3.0</b> ·
   <a href="docs/wiki/Home.md"><b>Visual Wiki</b></a> ·
   <a href="CHANGELOG.md"><b>Release Notes</b></a> ·
   <a href="docs/wiki/Benchmarks-and-Validation.md"><b>Benchmarks &amp; Validation</b></a> ·
@@ -61,15 +61,19 @@ mkdir -p ~/CCS_fMRIStudio && tar -xzf ~/Downloads/CCSfMRIStudio-linux-x64.tar.gz
 
 ---
 
-## ✨ What's New in v0.2.0
+## ✨ What's New in v0.3.0
 
+- **Interactive Batch Analysis (`6. Batch`):** Scan a whole study root folder (`Patient_*/pre|post` or BIDS), add individual folders, or multi-select NIfTI/DICOM files into a searchable subject queue with checkboxes and per-subject file editors.
+- **Full End-to-End Batch Pipeline & Group Export:** Toggle DICOM conversion, `ANTsPy` preprocessing (`Skip Existing Preproc`), Rust denoising + Pearson/Partial/GCMI/TE connectivity, and timeseries dynamics (`ACW`, `LZC`, `SampEn`, `PLE`), with live progress, safe cancellation, 1-click single-subject inspection, and incremental `batch_summary.csv` + `batch_summary.json` export.
+
+<details>
+<summary>Previous Releases: v0.2.0, v0.1.3, v0.1.2, v0.1.1 &amp; v0.1.0</summary>
+
+**v0.2.0**
 - **CONN-Style Denoising Quality Control:** Visualize before-vs-after FC bell curves, Framewise Displacement motion traces with scrubbed spikes, Welch Power Spectral Density filtering, and Raw vs Clean BOLD Carpet Plots side-by-side.
 - **Interactive ROI Timeseries Explorer:** Filter/search parcels by Yeo-7 network & hemisphere, inspect multi-ROI raw-vs-clean traces, `%` nuisance variance removed, and pairwise multi-measure coupling.
 - **Nilearn Partial FC + GCMI + Directed Transfer Entropy & Circular Connectome:** Analytical Ledoit-Wolf shrinkage partial correlation, Gaussian-copula Mutual Information (GCMI), directed Transfer Entropy (`CCS_EEGStudio`-inspired), clickable ROI × ROI heatmaps, directional circular connectome, and Top-10 Hub ROIs.
 - **fMRI Timeseries Dynamics (`fMRIAnalysis.py` Pure-Rust Engine):** Rayon-parallel sliding-window `ACW-0`, `ACW-50`, `ACF AUC`, `LZC`, `Sample Entropy`, `Median Frequency`, `Spectral Entropy`, and `1/f PLE` across Slow-5/Slow-4 sub-bands with Yeo-7 network profiles and `roi_dynamics.csv` export.
-
-<details>
-<summary>Previous Releases: v0.1.3, v0.1.2, v0.1.1 &amp; v0.1.0</summary>
 
 **v0.1.3**
 - **Whole-Pipeline Progress Bar & Visual 8-Stage ANTsPy Tracker:** Persistent 5-step top progress header (`1. Import` → `2. Preprocess` → `3. Lesion (Opt)` → `4. Denoise` → `5. Results`), live elapsed timer (`MM:SS`) + progress bar, and an 8-stage visual milestone grid during `ANTsPy` preprocessing with a green **Continue to Step 4 →** CTA upon completion.

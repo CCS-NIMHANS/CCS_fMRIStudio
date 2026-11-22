@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ccs_fmri_studio/main.dart';
+import 'package:ccs_fmri_studio/src/batch_runner.dart';
 import 'package:ccs_fmri_studio/src/rust/api.dart' as rust_api;
 import 'package:ccs_fmri_studio/src/session_state.dart';
 import 'package:ccs_fmri_studio/src/update_checker.dart';
@@ -66,6 +67,16 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Go to Step 4: Denoise & Compute →'), findsOneWidget);
+
+      await tester.tap(find.text('6. Batch'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Step 6: Batch Subject Selection & Pipeline Queue'),
+        findsOneWidget,
+      );
+      expect(find.text('Scan Study Folder'), findsOneWidget);
+      expect(find.text('Add Subject Folder'), findsOneWidget);
+      expect(find.text('Add NIfTI Files'), findsOneWidget);
     },
   );
 
@@ -275,5 +286,45 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Open Results Folder'), findsOneWidget);
     expect(find.text('Analyze Another Patient'), findsOneWidget);
+  });
+
+  test('BatchDiscovery discovers multi-patient DICOM, raw NIfTI & preproc folders and writes batch CSV', () async {
+    final tmp = Directory.systemTemp.createTempSync('ccs_fmri_batch_test_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    String p(List<String> parts) => parts.join(Platform.pathSeparator);
+
+    // Patient_01/pre -> raw DICOM
+    final p1Pre = Directory(p([tmp.path, 'Study', 'Patient_01', 'pre']))
+      ..createSync(recursive: true);
+    final boldDcm = Directory(p([p1Pre.path, 'HEAD_EP2D_RS_FMRI_0023']))
+      ..createSync();
+    final t1Dcm = Directory(p([p1Pre.path, 'HEAD_T1_MPRAGE_SAG_ISO_0011']))
+      ..createSync();
+    File(p([boldDcm.path, '0001.IMA'])).writeAsStringSync('stub');
+    File(p([t1Dcm.path, '0001.IMA'])).writeAsStringSync('stub');
+
+    // Patient_01/post -> preprocessed MNI
+    final p1Post = Directory(p([tmp.path, 'Study', 'Patient_01', 'post', 'preproc']))
+      ..createSync(recursive: true);
+    File(p([p1Post.path, 'bold_mni.nii'])).writeAsStringSync('stub');
+    File(p([p1Post.path, 'schaefer400_mni.nii.gz'])).writeAsStringSync('stub');
+
+    // Patient_02/pre -> raw NIfTI
+    final p2Pre = Directory(p([tmp.path, 'Study', 'Patient_02', 'pre', 'raw_nifti']))
+      ..createSync(recursive: true);
+    File(p([p2Pre.path, 't1w.nii.gz'])).writeAsStringSync('stub');
+    File(p([p2Pre.path, 'bold.nii.gz'])).writeAsStringSync('stub');
+
+    final items = BatchDiscovery.discoverStudyFolder(p([tmp.path, 'Study']));
+    expect(items.length, 3);
+    final byId = {for (final it in items) it.id: it};
+    expect(byId['Patient_01_pre']?.detectedKind, DetectedDatasetKind.rawDicom);
+    expect(byId['Patient_01_post']?.detectedKind, DetectedDatasetKind.preprocessed);
+    expect(byId['Patient_02_pre']?.detectedKind, DetectedDatasetKind.rawNifti);
+
+    final outDir = p([tmp.path, 'Study', 'batch_results']);
+    await BatchRunner.exportBatchSummary(items, outDir);
+    expect(File(p([outDir, 'batch_summary.csv'])).existsSync(), isTrue);
+    expect(File(p([outDir, 'batch_summary.json'])).existsSync(), isTrue);
   });
 }

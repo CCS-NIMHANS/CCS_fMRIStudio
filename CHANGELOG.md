@@ -2,6 +2,14 @@
 
 All notable changes to **CCS_fMRIStudio** are documented in this file.
 
+## [0.3.0] - 2026-11-22
+
+### Added
+- **Interactive Batch Analysis & Multi-Subject Queue (`6. Batch`, `lib/src/batch_runner.dart`, `lib/widgets/batch_panel.dart`)**:
+  - **Study Discovery (`BatchDiscovery.discoverStudyFolder`)**: Scans a study root folder (e.g., BIDS `sub-*/ses-*` or `Patient_*/pre|post`) to auto-discover raw DICOM, raw NIfTI, and preprocessed MNI subjects without duplicating subfolders.
+  - **Interactive Multi-File & Folder Selection**: Supports **Scan Study Folder**, **Add Subject Folder**, multi-select **Add NIfTI Files**, queue filtering/search, Select All/None checkboxes, per-subject **Edit Files** dialog, and 1-click **Load in Single-Subject Workflow**.
+  - **Configurable End-to-End Batch Runner (`BatchRunner`)**: Sequentially runs DICOM conversion (`dcm2niix`), `ANTsPy` preprocessing (`Skip Existing Preproc` option), lesion-aware Rust denoising/FC/Partial/GCMI/TE, and `fMRIAnalysis.py`-inspired dynamics with live elapsed timer, `Stop After Current` cancellation, and incremental `batch_summary.csv` + `batch_summary.json` export.
+
 ## [0.2.0] - 2026-11-22
 
 ### Added

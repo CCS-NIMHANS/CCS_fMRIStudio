@@ -10,6 +10,7 @@ import 'package:ccs_fmri_studio/src/rust/frb_generated.dart';
 import 'package:ccs_fmri_studio/src/rust_loader.dart';
 import 'package:ccs_fmri_studio/src/session_state.dart';
 import 'package:ccs_fmri_studio/src/update_checker.dart';
+import 'package:ccs_fmri_studio/widgets/batch_panel.dart';
 import 'package:ccs_fmri_studio/widgets/lesion_editor_panel.dart';
 import 'package:ccs_fmri_studio/widgets/path_picker_field.dart';
 import 'package:ccs_fmri_studio/widgets/results_dashboard.dart';
@@ -752,6 +753,28 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     });
   }
 
+  Future<void> _loadBatchSubject(String folder) async {
+    final scan = _session.scanFolder(folder);
+    final name = FmriSessionState.basename(scan.rootFolder);
+    setState(() {
+      _lastScan = scan;
+      _useLesionMask = _session.lesionMaskPath.isNotEmpty;
+      if (scan.kind == DetectedDatasetKind.preprocessed &&
+          _session.boldMniPath.isNotEmpty) {
+        _stepIndex = 3;
+        _statusMessage = 'Loaded batch subject "$name" into Step 4 (Denoise).';
+      } else {
+        _stepIndex = 0;
+        _statusMessage = 'Loaded batch subject "$name" into Step 1 (Import).';
+      }
+    });
+    if (_session.boldMniPath.isNotEmpty) {
+      await _inspectAndRender(_session.boldMniPath);
+    } else if (_session.rawBoldPath.isNotEmpty) {
+      await _inspectAndRender(_session.rawBoldPath);
+    }
+  }
+
   Widget _stepIcon(IconData icon, bool ready) {
     if (!ready) return Icon(icon);
     return Badge(
@@ -869,6 +892,11 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                       selectedIcon: _stepIcon(Icons.insights, step5Ready),
                       label: const Text('5. Results'),
                     ),
+                    const NavigationRailDestination(
+                      icon: Icon(Icons.library_books_outlined),
+                      selectedIcon: Icon(Icons.library_books),
+                      label: Text('6. Batch'),
+                    ),
                   ],
                 ),
                 const VerticalDivider(width: 1, color: Colors.white12),
@@ -881,6 +909,18 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                       LesionEditorPanel(session: _session),
                       _buildStep4Denoise(context),
                       _buildStep5Results(context),
+                      BatchPanel(
+                        session: _session,
+                        templateId: _templateId,
+                        transform: _transform,
+                        lesionMode: _lesionMode,
+                        lowHz: _lowHz,
+                        highHz: _highHz,
+                        fdThresholdMm: _fdThresholdMm,
+                        maxDamagePct: _maxDamagePct,
+                        onOpenFolder: _openDirectoryInOs,
+                        onInspectSubject: _loadBatchSubject,
+                      ),
                     ],
                   ),
                 ),
