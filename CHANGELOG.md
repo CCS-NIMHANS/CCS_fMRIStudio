@@ -2,6 +2,22 @@
 
 All notable changes to **CCS_fMRIStudio** are documented in this file.
 
+## [0.2.0] - 2026-11-22
+
+### Added
+- **CONN-Style Denoising Quality Control (`rust/src/api.rs`, `lib/widgets/results_dashboard.dart`)**:
+  - Added before-vs-after Functional Connectivity value distribution histograms (`rawFcHist` vs `cleanFcHist` + mean/SD summary), Framewise Displacement motion trace (`fdTrace`) with threshold & shaded scrubbed frames, and Raw vs Clean BOLD Carpet Plot comparison.
+- **Interactive ROI Timeseries & Spectral Explorer (`get_roi_timeseries_detail`)**:
+  - Searchable Schaefer/atlas ROI list with Network (`Vis`, `SomMot`, `DorsAttn`, `SalVentAttn`, `Limbic`, `Cont`, `Default`) and Hemisphere (`LH`/`RH`) filters supporting multi-ROI selection.
+  - Overlays z-scored Raw vs Clean BOLD timeseries, Welch Power Spectral Density before vs after bandpass filtering, per-ROI nuisance variance removed `%`, and pairwise Pearson / Partial / GCMI / Transfer Entropy coupling readouts.
+- **Advanced Connectivity, GCMI & Directed Transfer Entropy (`rust/src/info_theory.rs`)**:
+  - Implemented `nilearn`-style analytical **Ledoit-Wolf Shrinkage Partial Correlation** (`faer` LLT precision matrix inversion), `CCS_EEGStudio`-inspired undirected **Gaussian-Copula Mutual Information (GCMI, bits)**, and directed **Gaussian-Copula Transfer Entropy (`TE i -> j`, bits)**.
+  - Added interactive ROI × ROI heatmap explorer (click any cell to jump directly to those ROIs' traces), a multi-community **Circular Connectome** with density slider and directional arrowheads, and a **Top-10 Hub ROIs** chart (`get_top_hubs`).
+  - Exported `partial_fc_matrix.csv`, `gcmi_matrix.csv`, and `te_matrix.csv` automatically alongside `fc_matrix.csv`.
+- **fMRI Timeseries Dynamics (`rust/src/dynamics.rs`, `compute_cached_dynamics`)**:
+  - Ported all 9 sliding-window complexity & intrinsic timescale metrics inspired by `fMRIAnalysis.py` to Rayon-parallel pure Rust: **ACW-0**, **ACW-50**, **ACF AUC (rect & trap)**, **Lempel-Ziv Complexity (LZC)**, **Sample Entropy (`m=2`)**, **Welch Median Frequency**, **Normalized Spectral Entropy**, and **1/f Power-Law Exponent (PLE)**.
+  - Added sub-band selector (`Slow-5`, `Slow-4`, `Full Band`), configurable window/step sliders, Yeo-7 network profile chart (`Mean ± SD`), and `roi_dynamics.csv` export.
+
 ## [0.1.3] - 2026-11-21
 
 ### Added

@@ -1,11 +1,14 @@
 import 'dart:io';
-import 'dart:ui';
+import 'dart:typed_data';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ccs_fmri_studio/main.dart';
+import 'package:ccs_fmri_studio/src/rust/api.dart' as rust_api;
 import 'package:ccs_fmri_studio/src/session_state.dart';
 import 'package:ccs_fmri_studio/src/update_checker.dart';
+import 'package:ccs_fmri_studio/widgets/results_dashboard.dart';
 
 void main() {
   testWidgets(
@@ -166,5 +169,111 @@ void main() {
       UpdateChecker.findAsset(mockAssets, platform: UpdatePlatform.linux)?.name,
       'CCSfMRIStudio-linux-x64.tar.gz',
     );
+  });
+
+  testWidgets('ResultsDashboard renders CONN QC, ROI Explorer, Connectome, Dynamics & Export tabs', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final mockSummary = rust_api.LesionPipelineSummary(
+      nTimepoints: 120,
+      nRois: 4,
+      nIntactRois: 4,
+      nExcludedRois: 0,
+      trSec: 2.0,
+      usedMmap: true,
+      lesionVolumeMl: 0.0,
+      dominantHemisphere: 'None',
+      globalEfficiency: 0.42,
+      meanNodeStrength: 1.5,
+      meanHomotopicFc: 0.55,
+      lateralityIndex: 0.0,
+      lesionSeedMeanAbsR: 0.0,
+      meanAbsFc: 0.25,
+      totalMs: 42.0,
+      fcPreviewRgba: Uint8List(4 * 4 * 4),
+      fcPreviewSize: 4,
+      carpetRgba: Uint8List(120 * 4 * 4),
+      carpetWidth: 120,
+      carpetHeight: 4,
+      exportedDir: '/tmp/ccs_results_test',
+      rawFcHist: Float32List.fromList(List.filled(41, 0.02)),
+      cleanFcHist: Float32List.fromList(List.filled(41, 0.03)),
+      rawFcMean: 0.31,
+      rawFcSd: 0.28,
+      cleanFcMean: 0.02,
+      cleanFcSd: 0.14,
+      meanFdMm: 0.12,
+      pctScrubbed: 4.2,
+      fdTrace: Float32List.fromList(List.filled(120, 0.12)),
+      scrubbedIndices: Uint32List.fromList([10, 50]),
+      rawCarpetRgba: Uint8List(120 * 4 * 4),
+      roiLabels: const [
+        '7Networks_LH_Vis_1',
+        '7Networks_LH_Default_1',
+        '7Networks_RH_Vis_1',
+        '7Networks_RH_Default_1',
+      ],
+      networkNames: const ['LH_Vis', 'LH_Default', 'RH_Vis', 'RH_Default'],
+      roiNetworkIndices: Uint32List.fromList([0, 1, 2, 3]),
+      meanAbsPartialFc: 0.11,
+      meanGcmiBits: 0.08,
+      meanTeBits: 0.03,
+      partialPreviewRgba: Uint8List(4 * 4 * 4),
+      gcmiPreviewRgba: Uint8List(4 * 4 * 4),
+      tePreviewRgba: Uint8List(4 * 4 * 4),
+      netPearsonFlat: Float32List.fromList(List.filled(16, 0.2)),
+      netPartialFlat: Float32List.fromList(List.filled(16, 0.1)),
+      netGcmiFlat: Float32List.fromList(List.filled(16, 0.05)),
+      netTeFlat: Float32List.fromList(List.filled(16, 0.02)),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: ResultsDashboard(
+            summary: mockSummary,
+            fdThresholdMm: 0.5,
+            lowHz: 0.008,
+            highHz: 0.09,
+            fcImage: null,
+            partialImage: null,
+            gcmiImage: null,
+            teImage: null,
+            rawCarpetImage: null,
+            cleanCarpetImage: null,
+            onGoStep4: () {},
+            onOpenResultsFolder: (_) {},
+            onSaveReportAs: () {},
+            onResetSession: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Denoising QC (CONN)'), findsOneWidget);
+    expect(find.text('CONN FC Value Distribution (Before vs After Denoising)'), findsOneWidget);
+    expect(find.text('Head Motion & Scrubbing (Framewise Displacement)'), findsOneWidget);
+    expect(find.text('ROI Timeseries'), findsOneWidget);
+    expect(find.text('Connectivity & Connectome'), findsOneWidget);
+    expect(find.text('Timeseries Dynamics'), findsOneWidget);
+    expect(find.text('Summary & Export'), findsOneWidget);
+
+    await tester.tap(find.text('Connectivity & Connectome'));
+    await tester.pumpAndSettle();
+    expect(find.text('Pearson FC'), findsOneWidget);
+    expect(find.text('Partial (Ledoit-Wolf)'), findsOneWidget);
+    expect(find.text('GCMI (bits)'), findsOneWidget);
+    expect(find.text('Transfer Entropy (→)'), findsOneWidget);
+
+    await tester.tap(find.text('Summary & Export'));
+    await tester.pumpAndSettle();
+    expect(find.text('Open Results Folder'), findsOneWidget);
+    expect(find.text('Analyze Another Patient'), findsOneWidget);
   });
 }

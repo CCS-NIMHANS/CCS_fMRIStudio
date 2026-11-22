@@ -2,6 +2,8 @@ mod frb_generated; /* AUTO INJECTED BY flutter_rust_bridge. This line may not be
 pub mod api;
 pub mod connectivity;
 pub mod denoise;
+pub mod dynamics;
+pub mod info_theory;
 pub mod lesion;
 pub mod nifti_io;
 pub mod parcellation;
@@ -348,15 +350,83 @@ mod tests {
         export_lesion_pipeline_outputs(
             &out_dir,
             fc.view(),
+            Some(fc.view()),
+            None,
+            None,
             ts.view(),
             &summary_json,
             "# Test Report\n",
         )
         .unwrap();
         assert!(out_dir.join("fc_matrix.csv").exists());
+        assert!(out_dir.join("partial_fc_matrix.csv").exists());
         assert!(out_dir.join("denoised_timeseries.csv").exists());
         assert!(out_dir.join("biomarkers_summary.json").exists());
         assert!(out_dir.join("clinical_report.md").exists());
         let _ = std::fs::remove_dir_all(&out_dir);
+    }
+
+    #[test]
+    fn test_gcmi_transfer_entropy_ledoit_wolf_and_dynamics() {
+        use crate::dynamics::compute_sliding_dynamics;
+        use crate::info_theory::{
+            compute_fc_histogram, compute_gcmi_matrix, compute_partial_correlation_ledoit_wolf,
+            compute_transfer_entropy_matrix, copnorm,
+        };
+
+        // Coupled nonlinear/lagged timeseries (nt = 240, 3 ROIs: 0 -> 1 causal lag 1, 2 = NaN)
+        let nt = 240;
+        let mut ts = Array2::<f64>::zeros((nt, 3));
+        let mut x_prev = 0.0_f64;
+        for t in 0..nt {
+            let driver = (0.37 * (t as f64)).sin() + 0.5 * (0.91 * (t as f64)).cos();
+            let y_val = 0.85 * x_prev + 0.1 * ((1.7 * t as f64).sin());
+            ts[[t, 0]] = driver;
+            ts[[t, 1]] = y_val;
+            ts[[t, 2]] = f64::NAN;
+            x_prev = driver;
+        }
+
+        let cn = copnorm(&ts.column(0).to_vec());
+        let cn_mean = cn.iter().sum::<f64>() / (nt as f64);
+        assert!(cn_mean.abs() < 1e-9);
+
+        let gcmi = compute_gcmi_matrix(ts.view());
+        assert_eq!(gcmi[[0, 0]], 0.0);
+        assert!(gcmi[[0, 1]].is_finite() && gcmi[[0, 1]] > 0.0);
+        assert!(gcmi[[0, 2]].is_nan());
+
+        let te = compute_transfer_entropy_matrix(ts.view(), 1);
+        assert!(te[[0, 1]] > te[[1, 0]], "Expected TE(0->1) > TE(1->0): {} vs {}", te[[0, 1]], te[[1, 0]]);
+        assert!(te[[0, 2]].is_nan());
+
+        let partial = compute_partial_correlation_ledoit_wolf(ts.view()).unwrap();
+        assert!((partial[[0, 0]] - 1.0).abs() < 1e-6);
+        assert!(partial[[0, 1]].is_finite());
+        assert!(partial[[0, 2]].is_nan());
+
+        let (hist, mean, sd) = compute_fc_histogram(partial.view(), 41);
+        assert_eq!(hist.len(), 41);
+        assert!(mean.is_finite() && sd.is_finite());
+
+        // fMRIAnalysis.py 9 dynamics metrics
+        let mut slow = Array2::<f64>::zeros((180, 2));
+        let tr = 2.0_f64;
+        for t in 0..180 {
+            let sec = (t as f64) * tr;
+            slow[[t, 0]] = (2.0 * PI * 0.03 * sec).sin() + 0.35 * (2.0 * PI * 0.06 * sec).cos();
+            slow[[t, 1]] = f64::NAN;
+        }
+        let dyn_rows = compute_sliding_dynamics(slow.view(), tr, 60, 5, 0.01, 0.09).unwrap();
+        assert_eq!(dyn_rows.len(), 2);
+        assert!(dyn_rows[0].is_intact);
+        assert!(!dyn_rows[1].is_intact);
+        assert!(dyn_rows[0].acw0_mean > 0.0 && dyn_rows[0].acw0_mean.is_finite());
+        assert!(dyn_rows[0].acw50_mean > 0.0 && dyn_rows[0].acw50_mean.is_finite());
+        assert!(dyn_rows[0].auc_rect_mean.is_finite() && dyn_rows[0].auc_trap_mean.is_finite());
+        assert!(dyn_rows[0].lzc_mean > 0.0 && dyn_rows[0].lzc_mean.is_finite());
+        assert!(dyn_rows[0].med_f_mean >= 0.01 && dyn_rows[0].med_f_mean <= 0.09);
+        assert!(dyn_rows[0].se_mean > 0.0 && dyn_rows[0].se_mean <= 1.0);
+        assert!(dyn_rows[0].ple_mean.is_finite());
     }
 }

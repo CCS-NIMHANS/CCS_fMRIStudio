@@ -12,6 +12,7 @@ import 'package:ccs_fmri_studio/src/session_state.dart';
 import 'package:ccs_fmri_studio/src/update_checker.dart';
 import 'package:ccs_fmri_studio/widgets/lesion_editor_panel.dart';
 import 'package:ccs_fmri_studio/widgets/path_picker_field.dart';
+import 'package:ccs_fmri_studio/widgets/results_dashboard.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -122,6 +123,10 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   rust_api.LesionPipelineSummary? _pipelineSummary;
   ui.Image? _sliceImage;
   ui.Image? _fcImage;
+  ui.Image? _partialImage;
+  ui.Image? _gcmiImage;
+  ui.Image? _teImage;
+  ui.Image? _rawCarpetImage;
   ui.Image? _carpetImage;
   String _plane = 'axial';
   int _sliceIndex = 47;
@@ -239,6 +244,10 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     _lesionMaskCtrl.dispose();
     _sliceImage?.dispose();
     _fcImage?.dispose();
+    _partialImage?.dispose();
+    _gcmiImage?.dispose();
+    _teImage?.dispose();
+    _rawCarpetImage?.dispose();
     _carpetImage?.dispose();
     super.dispose();
   }
@@ -595,26 +604,47 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         outDir: outDir,
       );
 
-      ui.Image? fcImg;
-      if (summary.fcPreviewSize > 0 && summary.fcPreviewRgba.isNotEmpty) {
-        fcImg = await _decodeRgba(
-          summary.fcPreviewRgba,
-          summary.fcPreviewSize,
-          summary.fcPreviewSize,
-        );
+      Future<ui.Image?> tryDecode(Uint8List rgba, int w, int h) async {
+        if (w <= 0 || h <= 0 || rgba.isEmpty) return null;
+        return _decodeRgba(rgba, w, h);
       }
-      ui.Image? carpetImg;
-      if (summary.carpetWidth > 0 &&
-          summary.carpetHeight > 0 &&
-          summary.carpetRgba.isNotEmpty) {
-        carpetImg = await _decodeRgba(
-          summary.carpetRgba,
-          summary.carpetWidth,
-          summary.carpetHeight,
-        );
-      }
+
+      final fcImg = await tryDecode(
+        summary.fcPreviewRgba,
+        summary.fcPreviewSize,
+        summary.fcPreviewSize,
+      );
+      final partialImg = await tryDecode(
+        summary.partialPreviewRgba,
+        summary.fcPreviewSize,
+        summary.fcPreviewSize,
+      );
+      final gcmiImg = await tryDecode(
+        summary.gcmiPreviewRgba,
+        summary.fcPreviewSize,
+        summary.fcPreviewSize,
+      );
+      final teImg = await tryDecode(
+        summary.tePreviewRgba,
+        summary.fcPreviewSize,
+        summary.fcPreviewSize,
+      );
+      final rawCarpetImg = await tryDecode(
+        summary.rawCarpetRgba,
+        summary.carpetWidth,
+        summary.carpetHeight,
+      );
+      final carpetImg = await tryDecode(
+        summary.carpetRgba,
+        summary.carpetWidth,
+        summary.carpetHeight,
+      );
       if (!mounted) {
         fcImg?.dispose();
+        partialImg?.dispose();
+        gcmiImg?.dispose();
+        teImg?.dispose();
+        rawCarpetImg?.dispose();
         carpetImg?.dispose();
         return;
       }
@@ -623,6 +653,14 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         _session.resultsDir = summary.exportedDir ?? outDir;
         _fcImage?.dispose();
         _fcImage = fcImg;
+        _partialImage?.dispose();
+        _partialImage = partialImg;
+        _gcmiImage?.dispose();
+        _gcmiImage = gcmiImg;
+        _teImage?.dispose();
+        _teImage = teImg;
+        _rawCarpetImage?.dispose();
+        _rawCarpetImage = rawCarpetImg;
         _carpetImage?.dispose();
         _carpetImage = carpetImg;
         _stepIndex = 4;
@@ -698,6 +736,14 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       _sliceImage = null;
       _fcImage?.dispose();
       _fcImage = null;
+      _partialImage?.dispose();
+      _partialImage = null;
+      _gcmiImage?.dispose();
+      _gcmiImage = null;
+      _teImage?.dispose();
+      _teImage = null;
+      _rawCarpetImage?.dispose();
+      _rawCarpetImage = null;
       _carpetImage?.dispose();
       _carpetImage = null;
       _stepIndex = 0;
@@ -2282,293 +2328,21 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _buildKpiCard(
-                label: 'Intact ROIs',
-                value: '${s.nIntactRois} / ${s.nRois}',
-                sub: s.nExcludedRois > 0
-                    ? '${s.nExcludedRois} excluded by mask'
-                    : 'All parcels included',
-                color: const Color(0xFF2DD4BF),
-              ),
-              _buildKpiCard(
-                label: 'Mean |FC|',
-                value: s.meanAbsFc.toStringAsFixed(3),
-                sub: 'Absolute off-diagonal r',
-                color: const Color(0xFF38BDF8),
-              ),
-              _buildKpiCard(
-                label: 'Global Efficiency',
-                value: s.globalEfficiency.toStringAsFixed(3),
-                sub: 'NaN-safe graph integration',
-                color: const Color(0xFF34D399),
-              ),
-              _buildKpiCard(
-                label: 'Homotopic FC',
-                value: s.meanHomotopicFc.toStringAsFixed(3),
-                sub: 'Left–right mirror connectivity',
-                color: const Color(0xFFA78BFA),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              Chip(
-                label: Text(
-                  'Node Strength: ${s.meanNodeStrength.toStringAsFixed(2)}',
-                ),
-              ),
-              Chip(
-                label: Text(
-                  'Laterality Index: ${s.lateralityIndex.toStringAsFixed(3)}',
-                ),
-              ),
-              Chip(
-                label: Text(
-                  'Lesion Seed |r|: ${s.lesionSeedMeanAbsR.toStringAsFixed(3)}',
-                ),
-              ),
-              Chip(
-                label: Text(
-                  'Lesion: ${s.lesionVolumeMl.toStringAsFixed(1)} mL (${s.dominantHemisphere})',
-                ),
-              ),
-              Chip(
-                label: Text(
-                  'Volumes: ${s.nTimepoints} @ ${s.trSec.toStringAsFixed(2)}s',
-                ),
-              ),
-              Chip(
-                label: Text(
-                  'Rust Engine: ${s.totalMs.toStringAsFixed(1)} ms (mmap: ${s.usedMmap})',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _buildCard(
-                  title:
-                      'Functional Connectivity Matrix (${s.nRois} × ${s.nRois})',
-                  subtitle:
-                      'Blue = Negative (r = -1), White = 0, Red = Positive (r = +1), Dark = Lesion-excluded.',
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        height: 300,
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0B1120),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.white12),
-                        ),
-                        child: _fcImage != null
-                            ? SizedBox.expand(
-                                child: FittedBox(
-                                  fit: BoxFit.contain,
-                                  child: RawImage(
-                                    image: _fcImage,
-                                    filterQuality: FilterQuality.none,
-                                  ),
-                                ),
-                              )
-                            : const Center(child: Text('No matrix preview')),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Text('-1.0', style: TextStyle(fontSize: 11)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Container(
-                              height: 10,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(4),
-                                gradient: const LinearGradient(
-                                  colors: [
-                                    Color(0xFF1D4ED8),
-                                    Color(0xFFF8FAFC),
-                                    Color(0xFFDC2626),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          const Text('+1.0', style: TextStyle(fontSize: 11)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _buildCard(
-                  title:
-                      'Denoised ROI Timeseries Carpet Plot (${s.nTimepoints} vols × ${s.nRois} ROIs)',
-                  subtitle:
-                      'X-axis = scan timepoints, Y-axis = atlas parcels (z-scored BOLD: dark = -2.5 SD, bright = +2.5 SD).',
-                  child: Container(
-                    height: 326,
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0B1120),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white12),
-                    ),
-                    child: _carpetImage != null
-                        ? SizedBox.expand(
-                            child: FittedBox(
-                              fit: BoxFit.fill,
-                              child: RawImage(
-                                image: _carpetImage,
-                                filterQuality: FilterQuality.none,
-                              ),
-                            ),
-                          )
-                        : const Center(child: Text('No carpet preview')),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildCard(
-            title: 'Exported Outputs & What to Do Next',
-            subtitle: s.exportedDir != null
-                ? 'Automatically saved to: ${s.exportedDir}'
-                : 'Ready to inspect and analyze.',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    Chip(
-                      avatar: Icon(
-                        Icons.table_chart_outlined,
-                        size: 16,
-                        color: Color(0xFF2DD4BF),
-                      ),
-                      label: Text('fc_matrix.csv'),
-                    ),
-                    Chip(
-                      avatar: Icon(
-                        Icons.timeline,
-                        size: 16,
-                        color: Color(0xFF2DD4BF),
-                      ),
-                      label: Text('denoised_timeseries.csv'),
-                    ),
-                    Chip(
-                      avatar: Icon(
-                        Icons.data_object,
-                        size: 16,
-                        color: Color(0xFF2DD4BF),
-                      ),
-                      label: Text('biomarkers_summary.json'),
-                    ),
-                    Chip(
-                      avatar: Icon(
-                        Icons.description_outlined,
-                        size: 16,
-                        color: Color(0xFF2DD4BF),
-                      ),
-                      label: Text('clinical_report.md'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 8,
-                  children: [
-                    if (s.exportedDir != null)
-                      FilledButton.icon(
-                        onPressed: () => _openDirectoryInOs(s.exportedDir!),
-                        icon: const Icon(Icons.folder_open),
-                        label: const Text('Open Results Folder'),
-                      ),
-                    if (s.exportedDir != null)
-                      OutlinedButton.icon(
-                        onPressed: _saveReportAs,
-                        icon: const Icon(Icons.save_alt),
-                        label: const Text('Save Clinical Report As…'),
-                      ),
-                    OutlinedButton.icon(
-                      onPressed: () => setState(() => _stepIndex = 3),
-                      icon: const Icon(Icons.tune),
-                      label: const Text('Adjust Parameters (Step 4)'),
-                    ),
-                    TextButton.icon(
-                      onPressed: _resetSession,
-                      icon: const Icon(Icons.restart_alt),
-                      label: const Text('Analyze Another Patient'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildKpiCard({
-    required String label,
-    required String value,
-    required String sub,
-    required Color color,
-  }) {
-    return Container(
-      width: 220,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.45)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            sub,
-            style: const TextStyle(fontSize: 11.5, color: Color(0xFFCBD5E1)),
-          ),
-        ],
-      ),
+    return ResultsDashboard(
+      summary: s,
+      fdThresholdMm: _fdThresholdMm,
+      lowHz: _lowHz,
+      highHz: _highHz,
+      fcImage: _fcImage,
+      partialImage: _partialImage,
+      gcmiImage: _gcmiImage,
+      teImage: _teImage,
+      rawCarpetImage: _rawCarpetImage,
+      cleanCarpetImage: _carpetImage,
+      onGoStep4: () => setState(() => _stepIndex = 3),
+      onOpenResultsFolder: _openDirectoryInOs,
+      onSaveReportAs: _saveReportAs,
+      onResetSession: _resetSession,
     );
   }
 

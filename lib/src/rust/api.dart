@@ -6,7 +6,8 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `export_lesion_pipeline_outputs`, `lerp_u8`, `load_or_init_mask`, `render_carpet_rgba`, `render_fc_matrix_rgba`, `to_lesion_dto`
+// These functions are ignored because they are not marked as `pub`: `aggregate_network_matrix`, `build_roi_and_network_metadata`, `export_lesion_pipeline_outputs`, `extract_network_name`, `lerp_u8`, `load_or_init_mask`, `mean_off_diag`, `render_carpet_rgba`, `render_fc_matrix_rgba`, `render_nonneg_matrix_rgba`, `session_lock`, `to_lesion_dto`, `write_matrix_csv`, `zscore_f32`
+// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CachedSession`
 
 Future<EngineInfo> engineInfo() => RustLib.instance.api.crateApiEngineInfo();
 
@@ -157,6 +158,30 @@ Future<LesionPipelineSummary> runLesionAwarePipeline({
   outDir: outDir,
 );
 
+Future<RoiTimeseriesDetailDto> getRoiTimeseriesDetail({
+  required List<int> roiIndices,
+}) =>
+    RustLib.instance.api.crateApiGetRoiTimeseriesDetail(roiIndices: roiIndices);
+
+Future<List<RoiHubDto>> getTopHubs({
+  required String metric,
+  required int topK,
+}) => RustLib.instance.api.crateApiGetTopHubs(metric: metric, topK: topK);
+
+Future<DynamicsSummaryDto> computeCachedDynamics({
+  required int windowLen,
+  required int step,
+  required double lowHz,
+  required double highHz,
+  String? outDir,
+}) => RustLib.instance.api.crateApiComputeCachedDynamics(
+  windowLen: windowLen,
+  step: step,
+  lowHz: lowHz,
+  highHz: highHz,
+  outDir: outDir,
+);
+
 class DenoisePipelineSummary {
   final int nTimepoints;
   final int nRois;
@@ -216,6 +241,85 @@ class DenoisePipelineSummary {
           meanAbsFc == other.meanAbsFc;
 }
 
+class DynamicsSummaryDto {
+  final int nIntactRois;
+  final double lowHz;
+  final double highHz;
+  final int windowLen;
+  final int step;
+  final double acw0Mean;
+  final double acw50Mean;
+  final double aucRectMean;
+  final double aucTrapMean;
+  final double lzcMean;
+  final double sampenMean;
+  final double medFMean;
+  final double seMean;
+  final double pleMean;
+  final List<NetworkDynamicsDto> networks;
+  final String? exportedCsvPath;
+
+  const DynamicsSummaryDto({
+    required this.nIntactRois,
+    required this.lowHz,
+    required this.highHz,
+    required this.windowLen,
+    required this.step,
+    required this.acw0Mean,
+    required this.acw50Mean,
+    required this.aucRectMean,
+    required this.aucTrapMean,
+    required this.lzcMean,
+    required this.sampenMean,
+    required this.medFMean,
+    required this.seMean,
+    required this.pleMean,
+    required this.networks,
+    this.exportedCsvPath,
+  });
+
+  @override
+  int get hashCode =>
+      nIntactRois.hashCode ^
+      lowHz.hashCode ^
+      highHz.hashCode ^
+      windowLen.hashCode ^
+      step.hashCode ^
+      acw0Mean.hashCode ^
+      acw50Mean.hashCode ^
+      aucRectMean.hashCode ^
+      aucTrapMean.hashCode ^
+      lzcMean.hashCode ^
+      sampenMean.hashCode ^
+      medFMean.hashCode ^
+      seMean.hashCode ^
+      pleMean.hashCode ^
+      networks.hashCode ^
+      exportedCsvPath.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DynamicsSummaryDto &&
+          runtimeType == other.runtimeType &&
+          nIntactRois == other.nIntactRois &&
+          lowHz == other.lowHz &&
+          highHz == other.highHz &&
+          windowLen == other.windowLen &&
+          step == other.step &&
+          acw0Mean == other.acw0Mean &&
+          acw50Mean == other.acw50Mean &&
+          aucRectMean == other.aucRectMean &&
+          aucTrapMean == other.aucTrapMean &&
+          lzcMean == other.lzcMean &&
+          sampenMean == other.sampenMean &&
+          medFMean == other.medFMean &&
+          seMean == other.seMean &&
+          pleMean == other.pleMean &&
+          networks == other.networks &&
+          exportedCsvPath == other.exportedCsvPath;
+}
+
 class EngineInfo {
   final String name;
   final String version;
@@ -262,6 +366,30 @@ class LesionPipelineSummary {
   final int carpetWidth;
   final int carpetHeight;
   final String? exportedDir;
+  final Float32List rawFcHist;
+  final Float32List cleanFcHist;
+  final double rawFcMean;
+  final double rawFcSd;
+  final double cleanFcMean;
+  final double cleanFcSd;
+  final double meanFdMm;
+  final double pctScrubbed;
+  final Float32List fdTrace;
+  final Uint32List scrubbedIndices;
+  final Uint8List rawCarpetRgba;
+  final List<String> roiLabels;
+  final List<String> networkNames;
+  final Uint32List roiNetworkIndices;
+  final double meanAbsPartialFc;
+  final double meanGcmiBits;
+  final double meanTeBits;
+  final Uint8List partialPreviewRgba;
+  final Uint8List gcmiPreviewRgba;
+  final Uint8List tePreviewRgba;
+  final Float32List netPearsonFlat;
+  final Float32List netPartialFlat;
+  final Float32List netGcmiFlat;
+  final Float32List netTeFlat;
 
   const LesionPipelineSummary({
     required this.nTimepoints,
@@ -285,6 +413,30 @@ class LesionPipelineSummary {
     required this.carpetWidth,
     required this.carpetHeight,
     this.exportedDir,
+    required this.rawFcHist,
+    required this.cleanFcHist,
+    required this.rawFcMean,
+    required this.rawFcSd,
+    required this.cleanFcMean,
+    required this.cleanFcSd,
+    required this.meanFdMm,
+    required this.pctScrubbed,
+    required this.fdTrace,
+    required this.scrubbedIndices,
+    required this.rawCarpetRgba,
+    required this.roiLabels,
+    required this.networkNames,
+    required this.roiNetworkIndices,
+    required this.meanAbsPartialFc,
+    required this.meanGcmiBits,
+    required this.meanTeBits,
+    required this.partialPreviewRgba,
+    required this.gcmiPreviewRgba,
+    required this.tePreviewRgba,
+    required this.netPearsonFlat,
+    required this.netPartialFlat,
+    required this.netGcmiFlat,
+    required this.netTeFlat,
   });
 
   @override
@@ -309,7 +461,31 @@ class LesionPipelineSummary {
       carpetRgba.hashCode ^
       carpetWidth.hashCode ^
       carpetHeight.hashCode ^
-      exportedDir.hashCode;
+      exportedDir.hashCode ^
+      rawFcHist.hashCode ^
+      cleanFcHist.hashCode ^
+      rawFcMean.hashCode ^
+      rawFcSd.hashCode ^
+      cleanFcMean.hashCode ^
+      cleanFcSd.hashCode ^
+      meanFdMm.hashCode ^
+      pctScrubbed.hashCode ^
+      fdTrace.hashCode ^
+      scrubbedIndices.hashCode ^
+      rawCarpetRgba.hashCode ^
+      roiLabels.hashCode ^
+      networkNames.hashCode ^
+      roiNetworkIndices.hashCode ^
+      meanAbsPartialFc.hashCode ^
+      meanGcmiBits.hashCode ^
+      meanTeBits.hashCode ^
+      partialPreviewRgba.hashCode ^
+      gcmiPreviewRgba.hashCode ^
+      tePreviewRgba.hashCode ^
+      netPearsonFlat.hashCode ^
+      netPartialFlat.hashCode ^
+      netGcmiFlat.hashCode ^
+      netTeFlat.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -336,7 +512,31 @@ class LesionPipelineSummary {
           carpetRgba == other.carpetRgba &&
           carpetWidth == other.carpetWidth &&
           carpetHeight == other.carpetHeight &&
-          exportedDir == other.exportedDir;
+          exportedDir == other.exportedDir &&
+          rawFcHist == other.rawFcHist &&
+          cleanFcHist == other.cleanFcHist &&
+          rawFcMean == other.rawFcMean &&
+          rawFcSd == other.rawFcSd &&
+          cleanFcMean == other.cleanFcMean &&
+          cleanFcSd == other.cleanFcSd &&
+          meanFdMm == other.meanFdMm &&
+          pctScrubbed == other.pctScrubbed &&
+          fdTrace == other.fdTrace &&
+          scrubbedIndices == other.scrubbedIndices &&
+          rawCarpetRgba == other.rawCarpetRgba &&
+          roiLabels == other.roiLabels &&
+          networkNames == other.networkNames &&
+          roiNetworkIndices == other.roiNetworkIndices &&
+          meanAbsPartialFc == other.meanAbsPartialFc &&
+          meanGcmiBits == other.meanGcmiBits &&
+          meanTeBits == other.meanTeBits &&
+          partialPreviewRgba == other.partialPreviewRgba &&
+          gcmiPreviewRgba == other.gcmiPreviewRgba &&
+          tePreviewRgba == other.tePreviewRgba &&
+          netPearsonFlat == other.netPearsonFlat &&
+          netPartialFlat == other.netPartialFlat &&
+          netGcmiFlat == other.netGcmiFlat &&
+          netTeFlat == other.netTeFlat;
 }
 
 class LesionSummaryDto {
@@ -374,6 +574,85 @@ class LesionSummaryDto {
           dominantHemisphere == other.dominantHemisphere;
 }
 
+class NetworkDynamicsDto {
+  final String networkName;
+  final int nIntactRois;
+  final double acw0Mean;
+  final double acw0Sd;
+  final double acw50Mean;
+  final double acw50Sd;
+  final double aucRectMean;
+  final double aucTrapMean;
+  final double lzcMean;
+  final double lzcSd;
+  final double sampenMean;
+  final double sampenSd;
+  final double medFMean;
+  final double seMean;
+  final double pleMean;
+  final double pleSd;
+
+  const NetworkDynamicsDto({
+    required this.networkName,
+    required this.nIntactRois,
+    required this.acw0Mean,
+    required this.acw0Sd,
+    required this.acw50Mean,
+    required this.acw50Sd,
+    required this.aucRectMean,
+    required this.aucTrapMean,
+    required this.lzcMean,
+    required this.lzcSd,
+    required this.sampenMean,
+    required this.sampenSd,
+    required this.medFMean,
+    required this.seMean,
+    required this.pleMean,
+    required this.pleSd,
+  });
+
+  @override
+  int get hashCode =>
+      networkName.hashCode ^
+      nIntactRois.hashCode ^
+      acw0Mean.hashCode ^
+      acw0Sd.hashCode ^
+      acw50Mean.hashCode ^
+      acw50Sd.hashCode ^
+      aucRectMean.hashCode ^
+      aucTrapMean.hashCode ^
+      lzcMean.hashCode ^
+      lzcSd.hashCode ^
+      sampenMean.hashCode ^
+      sampenSd.hashCode ^
+      medFMean.hashCode ^
+      seMean.hashCode ^
+      pleMean.hashCode ^
+      pleSd.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NetworkDynamicsDto &&
+          runtimeType == other.runtimeType &&
+          networkName == other.networkName &&
+          nIntactRois == other.nIntactRois &&
+          acw0Mean == other.acw0Mean &&
+          acw0Sd == other.acw0Sd &&
+          acw50Mean == other.acw50Mean &&
+          acw50Sd == other.acw50Sd &&
+          aucRectMean == other.aucRectMean &&
+          aucTrapMean == other.aucTrapMean &&
+          lzcMean == other.lzcMean &&
+          lzcSd == other.lzcSd &&
+          sampenMean == other.sampenMean &&
+          sampenSd == other.sampenSd &&
+          medFMean == other.medFMean &&
+          seMean == other.seMean &&
+          pleMean == other.pleMean &&
+          pleSd == other.pleSd;
+}
+
 class NiftiHeaderSummary {
   final Uint32List dims;
   final Float32List voxelSizes;
@@ -407,6 +686,175 @@ class NiftiHeaderSummary {
           trSec == other.trSec &&
           datatypeCode == other.datatypeCode &&
           affineFlat == other.affineFlat;
+}
+
+class PairwiseCouplingDto {
+  final int roiA;
+  final int roiB;
+  final String labelA;
+  final String labelB;
+  final double pearsonR;
+  final double partialR;
+  final double gcmiBits;
+  final double teAToB;
+  final double teBToA;
+
+  const PairwiseCouplingDto({
+    required this.roiA,
+    required this.roiB,
+    required this.labelA,
+    required this.labelB,
+    required this.pearsonR,
+    required this.partialR,
+    required this.gcmiBits,
+    required this.teAToB,
+    required this.teBToA,
+  });
+
+  @override
+  int get hashCode =>
+      roiA.hashCode ^
+      roiB.hashCode ^
+      labelA.hashCode ^
+      labelB.hashCode ^
+      pearsonR.hashCode ^
+      partialR.hashCode ^
+      gcmiBits.hashCode ^
+      teAToB.hashCode ^
+      teBToA.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PairwiseCouplingDto &&
+          runtimeType == other.runtimeType &&
+          roiA == other.roiA &&
+          roiB == other.roiB &&
+          labelA == other.labelA &&
+          labelB == other.labelB &&
+          pearsonR == other.pearsonR &&
+          partialR == other.partialR &&
+          gcmiBits == other.gcmiBits &&
+          teAToB == other.teAToB &&
+          teBToA == other.teBToA;
+}
+
+class RoiHubDto {
+  final int roiIndex;
+  final String label;
+  final String network;
+  final double score;
+
+  const RoiHubDto({
+    required this.roiIndex,
+    required this.label,
+    required this.network,
+    required this.score,
+  });
+
+  @override
+  int get hashCode =>
+      roiIndex.hashCode ^ label.hashCode ^ network.hashCode ^ score.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoiHubDto &&
+          runtimeType == other.runtimeType &&
+          roiIndex == other.roiIndex &&
+          label == other.label &&
+          network == other.network &&
+          score == other.score;
+}
+
+class RoiTimeseriesDetailDto {
+  final double trSec;
+  final Float32List fdTrace;
+  final Uint32List scrubbedIndices;
+  final List<RoiTraceDto> traces;
+  final PairwiseCouplingDto? pairwise;
+
+  const RoiTimeseriesDetailDto({
+    required this.trSec,
+    required this.fdTrace,
+    required this.scrubbedIndices,
+    required this.traces,
+    this.pairwise,
+  });
+
+  @override
+  int get hashCode =>
+      trSec.hashCode ^
+      fdTrace.hashCode ^
+      scrubbedIndices.hashCode ^
+      traces.hashCode ^
+      pairwise.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoiTimeseriesDetailDto &&
+          runtimeType == other.runtimeType &&
+          trSec == other.trSec &&
+          fdTrace == other.fdTrace &&
+          scrubbedIndices == other.scrubbedIndices &&
+          traces == other.traces &&
+          pairwise == other.pairwise;
+}
+
+class RoiTraceDto {
+  final int roiIndex;
+  final String label;
+  final String network;
+  final bool isIntact;
+  final double varianceRemovedPct;
+  final Float32List rawZ;
+  final Float32List cleanZ;
+  final Float32List psdFreqs;
+  final Float32List rawPsd;
+  final Float32List cleanPsd;
+
+  const RoiTraceDto({
+    required this.roiIndex,
+    required this.label,
+    required this.network,
+    required this.isIntact,
+    required this.varianceRemovedPct,
+    required this.rawZ,
+    required this.cleanZ,
+    required this.psdFreqs,
+    required this.rawPsd,
+    required this.cleanPsd,
+  });
+
+  @override
+  int get hashCode =>
+      roiIndex.hashCode ^
+      label.hashCode ^
+      network.hashCode ^
+      isIntact.hashCode ^
+      varianceRemovedPct.hashCode ^
+      rawZ.hashCode ^
+      cleanZ.hashCode ^
+      psdFreqs.hashCode ^
+      rawPsd.hashCode ^
+      cleanPsd.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoiTraceDto &&
+          runtimeType == other.runtimeType &&
+          roiIndex == other.roiIndex &&
+          label == other.label &&
+          network == other.network &&
+          isIntact == other.isIntact &&
+          varianceRemovedPct == other.varianceRemovedPct &&
+          rawZ == other.rawZ &&
+          cleanZ == other.cleanZ &&
+          psdFreqs == other.psdFreqs &&
+          rawPsd == other.rawPsd &&
+          cleanPsd == other.cleanPsd;
 }
 
 class SliceRgba {

@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <b>Current version: 0.1.3</b> ·
+  <b>Current version: 0.2.0</b> ·
   <a href="docs/wiki/Home.md"><b>Visual Wiki</b></a> ·
   <a href="CHANGELOG.md"><b>Release Notes</b></a> ·
   <a href="docs/wiki/Benchmarks-and-Validation.md"><b>Benchmarks &amp; Validation</b></a> ·
@@ -61,14 +61,20 @@ mkdir -p ~/CCS_fMRIStudio && tar -xzf ~/Downloads/CCSfMRIStudio-linux-x64.tar.gz
 
 ---
 
-## ✨ What's New in v0.1.3
+## ✨ What's New in v0.2.0
 
+- **CONN-Style Denoising Quality Control:** Visualize before-vs-after FC bell curves, Framewise Displacement motion traces with scrubbed spikes, Welch Power Spectral Density filtering, and Raw vs Clean BOLD Carpet Plots side-by-side.
+- **Interactive ROI Timeseries Explorer:** Filter/search parcels by Yeo-7 network & hemisphere, inspect multi-ROI raw-vs-clean traces, `%` nuisance variance removed, and pairwise multi-measure coupling.
+- **Nilearn Partial FC + GCMI + Directed Transfer Entropy & Circular Connectome:** Analytical Ledoit-Wolf shrinkage partial correlation, Gaussian-copula Mutual Information (GCMI), directed Transfer Entropy (`CCS_EEGStudio`-inspired), clickable ROI × ROI heatmaps, directional circular connectome, and Top-10 Hub ROIs.
+- **fMRI Timeseries Dynamics (`fMRIAnalysis.py` Pure-Rust Engine):** Rayon-parallel sliding-window `ACW-0`, `ACW-50`, `ACF AUC`, `LZC`, `Sample Entropy`, `Median Frequency`, `Spectral Entropy`, and `1/f PLE` across Slow-5/Slow-4 sub-bands with Yeo-7 network profiles and `roi_dynamics.csv` export.
+
+<details>
+<summary>Previous Releases: v0.1.3, v0.1.2, v0.1.1 &amp; v0.1.0</summary>
+
+**v0.1.3**
 - **Whole-Pipeline Progress Bar & Visual 8-Stage ANTsPy Tracker:** Persistent 5-step top progress header (`1. Import` → `2. Preprocess` → `3. Lesion (Opt)` → `4. Denoise` → `5. Results`), live elapsed timer (`MM:SS`) + progress bar, and an 8-stage visual milestone grid during `ANTsPy` preprocessing with a green **Continue to Step 4 →** CTA upon completion.
 - **Step 5 Visual Results & Auto-Export Dashboard:** Automatically saves `fc_matrix.csv`, `denoised_timeseries.csv`, `biomarkers_summary.json`, and `clinical_report.md`, and displays **KPI Biomarker Cards**, a **400×400 Functional Connectivity Heatmap**, a **Denoised ROI Timeseries Carpet Plot**, and one-click **Open Results Folder** / **Save Clinical Report As…** / **Analyze Another Patient** actions.
 - **Clean Step 4 & Full-Size Brain Slice Viewport:** Compact basename chips, explicit **Apply Lesion Mask** switch, clearly labeled sliders, collapsible manual paths, and a dark-framed scaled slice viewport.
-
-<details>
-<summary>Previous Releases: v0.1.2, v0.1.1 &amp; v0.1.0</summary>
 
 **v0.1.2**
 - **Smart 1-Click Patient Folder Detection (DICOM `.IMA`/`.dcm`, NIfTI, BIDS, or Preprocessed):** Click **Open Patient Folder** on any subject directory — including raw Siemens `.IMA` multi-series folders — and CCS fMRI Studio automatically identifies the best T1w isotropic and 4D BOLD series, raw NIfTIs, or `preproc/` MNI derivatives and shows you the exact next button to click.

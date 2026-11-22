@@ -28,7 +28,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  PairwiseCouplingDto dco_decode_box_autoadd_pairwise_coupling_dto(dynamic raw);
+
+  @protected
   DenoisePipelineSummary dco_decode_denoise_pipeline_summary(dynamic raw);
+
+  @protected
+  DynamicsSummaryDto dco_decode_dynamics_summary_dto(dynamic raw);
 
   @protected
   EngineInfo dco_decode_engine_info(dynamic raw);
@@ -49,7 +55,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LesionSummaryDto dco_decode_lesion_summary_dto(dynamic raw);
 
   @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<NetworkDynamicsDto> dco_decode_list_network_dynamics_dto(dynamic raw);
+
+  @protected
   Float32List dco_decode_list_prim_f_32_strict(dynamic raw);
+
+  @protected
+  List<int> dco_decode_list_prim_u_32_loose(dynamic raw);
 
   @protected
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
@@ -58,10 +73,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<RoiHubDto> dco_decode_list_roi_hub_dto(dynamic raw);
+
+  @protected
+  List<RoiTraceDto> dco_decode_list_roi_trace_dto(dynamic raw);
+
+  @protected
+  NetworkDynamicsDto dco_decode_network_dynamics_dto(dynamic raw);
+
+  @protected
   NiftiHeaderSummary dco_decode_nifti_header_summary(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  PairwiseCouplingDto? dco_decode_opt_box_autoadd_pairwise_coupling_dto(
+    dynamic raw,
+  );
+
+  @protected
+  PairwiseCouplingDto dco_decode_pairwise_coupling_dto(dynamic raw);
+
+  @protected
+  RoiHubDto dco_decode_roi_hub_dto(dynamic raw);
+
+  @protected
+  RoiTimeseriesDetailDto dco_decode_roi_timeseries_detail_dto(dynamic raw);
+
+  @protected
+  RoiTraceDto dco_decode_roi_trace_dto(dynamic raw);
 
   @protected
   SliceRgba dco_decode_slice_rgba(dynamic raw);
@@ -91,7 +132,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
+  PairwiseCouplingDto sse_decode_box_autoadd_pairwise_coupling_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   DenoisePipelineSummary sse_decode_denoise_pipeline_summary(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  DynamicsSummaryDto sse_decode_dynamics_summary_dto(
     SseDeserializer deserializer,
   );
 
@@ -116,7 +167,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LesionSummaryDto sse_decode_lesion_summary_dto(SseDeserializer deserializer);
 
   @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<NetworkDynamicsDto> sse_decode_list_network_dynamics_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   Float32List sse_decode_list_prim_f_32_strict(SseDeserializer deserializer);
+
+  @protected
+  List<int> sse_decode_list_prim_u_32_loose(SseDeserializer deserializer);
 
   @protected
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
@@ -125,12 +187,44 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  List<RoiHubDto> sse_decode_list_roi_hub_dto(SseDeserializer deserializer);
+
+  @protected
+  List<RoiTraceDto> sse_decode_list_roi_trace_dto(SseDeserializer deserializer);
+
+  @protected
+  NetworkDynamicsDto sse_decode_network_dynamics_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   NiftiHeaderSummary sse_decode_nifti_header_summary(
     SseDeserializer deserializer,
   );
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  PairwiseCouplingDto? sse_decode_opt_box_autoadd_pairwise_coupling_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  PairwiseCouplingDto sse_decode_pairwise_coupling_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoiHubDto sse_decode_roi_hub_dto(SseDeserializer deserializer);
+
+  @protected
+  RoiTimeseriesDetailDto sse_decode_roi_timeseries_detail_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RoiTraceDto sse_decode_roi_trace_dto(SseDeserializer deserializer);
 
   @protected
   SliceRgba sse_decode_slice_rgba(SseDeserializer deserializer);
@@ -166,8 +260,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_pairwise_coupling_dto(
+    PairwiseCouplingDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_denoise_pipeline_summary(
     DenoisePipelineSummary self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_dynamics_summary_dto(
+    DynamicsSummaryDto self,
     SseSerializer serializer,
   );
 
@@ -196,8 +302,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_network_dynamics_dto(
+    List<NetworkDynamicsDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_f_32_strict(
     Float32List self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_u_32_loose(
+    List<int> self,
     SseSerializer serializer,
   );
 
@@ -214,6 +335,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_roi_hub_dto(
+    List<RoiHubDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_roi_trace_dto(
+    List<RoiTraceDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_network_dynamics_dto(
+    NetworkDynamicsDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_nifti_header_summary(
     NiftiHeaderSummary self,
     SseSerializer serializer,
@@ -221,6 +360,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_pairwise_coupling_dto(
+    PairwiseCouplingDto? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_pairwise_coupling_dto(
+    PairwiseCouplingDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_roi_hub_dto(RoiHubDto self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_roi_timeseries_detail_dto(
+    RoiTimeseriesDetailDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_roi_trace_dto(RoiTraceDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_slice_rgba(SliceRgba self, SseSerializer serializer);

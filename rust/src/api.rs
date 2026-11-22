@@ -2,7 +2,12 @@ use crate::connectivity::{
     compute_homotopic_and_laterality, compute_nan_safe_graph_metrics, detect_schaefer_hemispheres,
     lesion_network_mapping, static_fc_pearson,
 };
-use crate::denoise::{compute_acompcor, load_confounds_tsv, simultaneous_denoise};
+use crate::denoise::{compute_acompcor, load_confounds_tsv, load_confounds_with_fd, simultaneous_denoise};
+use crate::dynamics::{compute_sliding_dynamics, welch_psd};
+use crate::info_theory::{
+    compute_fc_histogram, compute_gcmi_matrix, compute_partial_correlation_ledoit_wolf,
+    compute_transfer_entropy_matrix,
+};
 use crate::lesion::{
     apply_spherical_brush, compute_hemispheric_asymmetry, dilate_mask_3d, fill_holes_3d,
     magic_wand_3d, remove_small_islands_3d, render_ortho_slice_with_lesion_rgba, save_mask_u8_nifti,
@@ -14,9 +19,33 @@ use crate::nifti_io::{
 };
 use crate::parcellation::{extract_roi_timeseries, extract_roi_timeseries_lesion_aware};
 use anyhow::{bail, Context, Result};
-use ndarray::{concatenate, Array2, Array3, Axis};
+use ndarray::{concatenate, Array2, Array3, ArrayView2, Axis};
+use std::collections::BTreeMap;
+use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::sync::{OnceLock, RwLock};
 use std::time::Instant;
+
+struct CachedSession {
+    raw_ts: Array2<f64>,
+    clean_ts: Array2<f64>,
+    tr_sec: f64,
+    roi_labels: Vec<String>,
+    network_names: Vec<String>,
+    roi_network_indices: Vec<usize>,
+    fc_pearson: Array2<f64>,
+    fc_partial: Array2<f64>,
+    fc_gcmi: Array2<f64>,
+    fc_te: Array2<f64>,
+    fd_trace: Vec<f32>,
+    scrubbed_indices: Vec<u32>,
+}
+
+static SESSION_CACHE: OnceLock<RwLock<Option<CachedSession>>> = OnceLock::new();
+
+fn session_lock() -> &'static RwLock<Option<CachedSession>> {
+    SESSION_CACHE.get_or_init(|| RwLock::new(None))
+}
 
 pub struct EngineInfo {
     pub name: String,
@@ -84,6 +113,111 @@ pub struct LesionPipelineSummary {
     pub carpet_width: u32,
     pub carpet_height: u32,
     pub exported_dir: Option<String>,
+    // v0.2.0 CONN QC
+    pub raw_fc_hist: Vec<f32>,
+    pub clean_fc_hist: Vec<f32>,
+    pub raw_fc_mean: f64,
+    pub raw_fc_sd: f64,
+    pub clean_fc_mean: f64,
+    pub clean_fc_sd: f64,
+    pub mean_fd_mm: f64,
+    pub pct_scrubbed: f64,
+    pub fd_trace: Vec<f32>,
+    pub scrubbed_indices: Vec<u32>,
+    pub raw_carpet_rgba: Vec<u8>,
+    // v0.2.0 ROI & Network metadata
+    pub roi_labels: Vec<String>,
+    pub network_names: Vec<String>,
+    pub roi_network_indices: Vec<u32>,
+    // v0.2.0 Nilearn Partial FC, GCMI & Directed Transfer Entropy
+    pub mean_abs_partial_fc: f64,
+    pub mean_gcmi_bits: f64,
+    pub mean_te_bits: f64,
+    pub partial_preview_rgba: Vec<u8>,
+    pub gcmi_preview_rgba: Vec<u8>,
+    pub te_preview_rgba: Vec<u8>,
+    pub net_pearson_flat: Vec<f32>,
+    pub net_partial_flat: Vec<f32>,
+    pub net_gcmi_flat: Vec<f32>,
+    pub net_te_flat: Vec<f32>,
+}
+
+pub struct RoiTraceDto {
+    pub roi_index: u32,
+    pub label: String,
+    pub network: String,
+    pub is_intact: bool,
+    pub variance_removed_pct: f64,
+    pub raw_z: Vec<f32>,
+    pub clean_z: Vec<f32>,
+    pub psd_freqs: Vec<f32>,
+    pub raw_psd: Vec<f32>,
+    pub clean_psd: Vec<f32>,
+}
+
+pub struct PairwiseCouplingDto {
+    pub roi_a: u32,
+    pub roi_b: u32,
+    pub label_a: String,
+    pub label_b: String,
+    pub pearson_r: f64,
+    pub partial_r: f64,
+    pub gcmi_bits: f64,
+    pub te_a_to_b: f64,
+    pub te_b_to_a: f64,
+}
+
+pub struct RoiTimeseriesDetailDto {
+    pub tr_sec: f64,
+    pub fd_trace: Vec<f32>,
+    pub scrubbed_indices: Vec<u32>,
+    pub traces: Vec<RoiTraceDto>,
+    pub pairwise: Option<PairwiseCouplingDto>,
+}
+
+pub struct RoiHubDto {
+    pub roi_index: u32,
+    pub label: String,
+    pub network: String,
+    pub score: f64,
+}
+
+pub struct NetworkDynamicsDto {
+    pub network_name: String,
+    pub n_intact_rois: u32,
+    pub acw0_mean: f64,
+    pub acw0_sd: f64,
+    pub acw50_mean: f64,
+    pub acw50_sd: f64,
+    pub auc_rect_mean: f64,
+    pub auc_trap_mean: f64,
+    pub lzc_mean: f64,
+    pub lzc_sd: f64,
+    pub sampen_mean: f64,
+    pub sampen_sd: f64,
+    pub med_f_mean: f64,
+    pub se_mean: f64,
+    pub ple_mean: f64,
+    pub ple_sd: f64,
+}
+
+pub struct DynamicsSummaryDto {
+    pub n_intact_rois: u32,
+    pub low_hz: f64,
+    pub high_hz: f64,
+    pub window_len: u32,
+    pub step: u32,
+    pub acw0_mean: f64,
+    pub acw50_mean: f64,
+    pub auc_rect_mean: f64,
+    pub auc_trap_mean: f64,
+    pub lzc_mean: f64,
+    pub sampen_mean: f64,
+    pub med_f_mean: f64,
+    pub se_mean: f64,
+    pub ple_mean: f64,
+    pub networks: Vec<NetworkDynamicsDto>,
+    pub exported_csv_path: Option<String>,
 }
 
 fn to_lesion_dto(s: LesionSummary) -> LesionSummaryDto {
@@ -365,19 +499,6 @@ pub fn run_roi_denoise_pipeline(
     let fc = static_fc_pearson(clean_ts.view())?;
     let fc_ms = t4.elapsed().as_secs_f64() * 1000.0;
 
-    let mut abs_sum = 0.0_f64;
-    let mut off_diag = 0_usize;
-    for i in 0..n_rois {
-        for j in (i + 1)..n_rois {
-            let v = fc[[i, j]];
-            if v.is_finite() {
-                abs_sum += v.abs();
-                off_diag += 1;
-            }
-        }
-    }
-    let mean_abs_fc = if off_diag > 0 { abs_sum / (off_diag as f64) } else { 0.0 };
-
     Ok(DenoisePipelineSummary {
         n_timepoints: nt as u32,
         n_rois: n_rois as u32,
@@ -389,7 +510,7 @@ pub fn run_roi_denoise_pipeline(
         denoise_ms,
         fc_ms,
         total_ms: t_total.elapsed().as_secs_f64() * 1000.0,
-        mean_abs_fc,
+        mean_abs_fc: mean_off_diag(fc.view(), true),
     })
 }
 
@@ -398,17 +519,15 @@ fn lerp_u8(a: u8, b: u8, t: f64) -> u8 {
     v.round().clamp(0.0, 255.0) as u8
 }
 
-/// Renders an N x N Pearson correlation matrix (`[-1, 1]`) into RGBA pixels
-/// using a blue (-1) -> white (0) -> crimson (+1) diverging colormap.
-#[flutter_rust_bridge::frb(ignore)]
-pub(crate) fn render_fc_matrix_rgba(fc: ndarray::ArrayView2<'_, f64>) -> (u32, Vec<u8>) {
+/// Renders a signed `[-1, 1]` connectivity matrix (`blue -> white -> crimson`, dark slate for NaN).
+pub(crate) fn render_fc_matrix_rgba(fc: ArrayView2<'_, f64>) -> (u32, Vec<u8>) {
     let n = fc.nrows().min(fc.ncols());
     let mut rgba = Vec::with_capacity(n * n * 4);
     for i in 0..n {
         for j in 0..n {
             let val = fc[[i, j]];
             if !val.is_finite() {
-                rgba.extend_from_slice(&[30, 41, 59, 255]); // dark slate (#1E293B)
+                rgba.extend_from_slice(&[30, 41, 59, 255]);
             } else if val >= 0.0 {
                 let t = val.clamp(0.0, 1.0);
                 rgba.push(lerp_u8(248, 220, t));
@@ -427,18 +546,62 @@ pub(crate) fn render_fc_matrix_rgba(fc: ndarray::ArrayView2<'_, f64>) -> (u32, V
     (n as u32, rgba)
 }
 
-/// Renders denoised ROI timeseries `(n_timepoints, n_rois)` into a carpet plot
-/// (`width = n_timepoints`, `height = n_rois`), z-scoring each ROI row.
-#[flutter_rust_bridge::frb(ignore)]
-pub(crate) fn render_carpet_rgba(clean_ts: ndarray::ArrayView2<'_, f64>) -> (u32, u32, Vec<u8>) {
-    let (nt, n_rois) = clean_ts.dim();
+/// Renders a non-negative `[0, cap]` information-theoretic matrix (white -> amber -> crimson, dark slate for NaN).
+pub(crate) fn render_nonneg_matrix_rgba(mat: ArrayView2<'_, f64>) -> Vec<u8> {
+    let n = mat.nrows().min(mat.ncols());
+    let mut vals: Vec<f64> = Vec::with_capacity(n * n);
+    for i in 0..n {
+        for j in 0..n {
+            if i != j && mat[[i, j]].is_finite() {
+                vals.push(mat[[i, j]].max(0.0));
+            }
+        }
+    }
+    let scale = if vals.is_empty() {
+        0.1
+    } else {
+        vals.sort_by(|a, b| a.total_cmp(b));
+        let p98 = vals[((vals.len() as f64) * 0.98).floor().clamp(0.0, (vals.len() - 1) as f64) as usize];
+        p98.max(0.05)
+    };
+
+    let mut rgba = Vec::with_capacity(n * n * 4);
+    for i in 0..n {
+        for j in 0..n {
+            let val = mat[[i, j]];
+            if !val.is_finite() {
+                rgba.extend_from_slice(&[30, 41, 59, 255]);
+            } else {
+                let t = (val.max(0.0) / scale).clamp(0.0, 1.0);
+                if t < 0.5 {
+                    let u = t * 2.0;
+                    rgba.push(lerp_u8(248, 245, u));
+                    rgba.push(lerp_u8(250, 158, u));
+                    rgba.push(lerp_u8(252, 11, u));
+                    rgba.push(255);
+                } else {
+                    let u = (t - 0.5) * 2.0;
+                    rgba.push(lerp_u8(245, 220, u));
+                    rgba.push(lerp_u8(158, 38, u));
+                    rgba.push(lerp_u8(11, 38, u));
+                    rgba.push(255);
+                }
+            }
+        }
+    }
+    rgba
+}
+
+/// Renders ROI timeseries `(n_timepoints, n_rois)` into a z-scored carpet plot.
+pub(crate) fn render_carpet_rgba(ts: ArrayView2<'_, f64>) -> (u32, u32, Vec<u8>) {
+    let (nt, n_rois) = ts.dim();
     let mut rgba = vec![0u8; nt * n_rois * 4];
     for r in 0..n_rois {
         let mut sum = 0.0_f64;
         let mut count = 0_usize;
         let mut has_nan = false;
         for t in 0..nt {
-            let v = clean_ts[[t, r]];
+            let v = ts[[t, r]];
             if v.is_finite() {
                 sum += v;
                 count += 1;
@@ -459,15 +622,15 @@ pub(crate) fn render_carpet_rgba(clean_ts: ndarray::ArrayView2<'_, f64>) -> (u32
         let mean = sum / (count as f64);
         let var: f64 = (0..nt)
             .map(|t| {
-                let d = clean_ts[[t, r]] - mean;
+                let d = ts[[t, r]] - mean;
                 d * d
             })
             .sum::<f64>()
             / (count as f64);
         let std_dev = var.sqrt().max(1e-9);
         for t in 0..nt {
-            let z = ((clean_ts[[t, r]] - mean) / std_dev).clamp(-2.5, 2.5);
-            let u = (z + 2.5) / 5.0; // 0..1
+            let z = ((ts[[t, r]] - mean) / std_dev).clamp(-2.5, 2.5);
+            let u = (z + 2.5) / 5.0;
             let idx = (r * nt + t) * 4;
             rgba[idx] = lerp_u8(15, 248, u);
             rgba[idx + 1] = lerp_u8(23, 250, u);
@@ -478,67 +641,161 @@ pub(crate) fn render_carpet_rgba(clean_ts: ndarray::ArrayView2<'_, f64>) -> (u32
     (nt as u32, n_rois as u32, rgba)
 }
 
-#[flutter_rust_bridge::frb(ignore)]
+fn write_matrix_csv(path: &Path, mat: ArrayView2<'_, f64>) -> Result<()> {
+    let f = std::fs::File::create(path)?;
+    let mut w = BufWriter::new(f);
+    let (nr, nc) = mat.dim();
+    for i in 0..nr {
+        for j in 0..nc {
+            if j > 0 {
+                w.write_all(b",")?;
+            }
+            let v = mat[[i, j]];
+            if v.is_finite() {
+                write!(w, "{v:.5}")?;
+            } else {
+                w.write_all(b"NaN")?;
+            }
+        }
+        w.write_all(b"\n")?;
+    }
+    w.flush()?;
+    Ok(())
+}
+
 pub(crate) fn export_lesion_pipeline_outputs(
     out_dir: &Path,
-    fc: ndarray::ArrayView2<'_, f64>,
-    clean_ts: ndarray::ArrayView2<'_, f64>,
+    fc_pearson: ArrayView2<'_, f64>,
+    fc_partial: Option<ArrayView2<'_, f64>>,
+    fc_gcmi: Option<ArrayView2<'_, f64>>,
+    fc_te: Option<ArrayView2<'_, f64>>,
+    clean_ts: ArrayView2<'_, f64>,
     summary_json: &serde_json::Value,
     report_md: &str,
 ) -> Result<()> {
-    use std::io::{BufWriter, Write};
-
     std::fs::create_dir_all(out_dir)
         .with_context(|| format!("Failed to create export folder {}", out_dir.display()))?;
-
-    {
-        let f = std::fs::File::create(out_dir.join("fc_matrix.csv"))?;
-        let mut w = BufWriter::new(f);
-        let (nr, nc) = fc.dim();
-        for i in 0..nr {
-            for j in 0..nc {
-                if j > 0 {
-                    w.write_all(b",")?;
-                }
-                let v = fc[[i, j]];
-                if v.is_finite() {
-                    write!(w, "{v:.5}")?;
-                } else {
-                    w.write_all(b"NaN")?;
-                }
-            }
-            w.write_all(b"\n")?;
-        }
-        w.flush()?;
+    write_matrix_csv(&out_dir.join("fc_matrix.csv"), fc_pearson)?;
+    if let Some(p) = fc_partial {
+        write_matrix_csv(&out_dir.join("partial_fc_matrix.csv"), p)?;
     }
-
-    {
-        let f = std::fs::File::create(out_dir.join("denoised_timeseries.csv"))?;
-        let mut w = BufWriter::new(f);
-        let (nt, nr) = clean_ts.dim();
-        for t in 0..nt {
-            for r in 0..nr {
-                if r > 0 {
-                    w.write_all(b",")?;
-                }
-                let v = clean_ts[[t, r]];
-                if v.is_finite() {
-                    write!(w, "{v:.5}")?;
-                } else {
-                    w.write_all(b"NaN")?;
-                }
-            }
-            w.write_all(b"\n")?;
-        }
-        w.flush()?;
+    if let Some(g) = fc_gcmi {
+        write_matrix_csv(&out_dir.join("gcmi_matrix.csv"), g)?;
     }
-
+    if let Some(te) = fc_te {
+        write_matrix_csv(&out_dir.join("te_matrix.csv"), te)?;
+    }
+    write_matrix_csv(&out_dir.join("denoised_timeseries.csv"), clean_ts)?;
     std::fs::write(
         out_dir.join("biomarkers_summary.json"),
         serde_json::to_string_pretty(summary_json)?,
     )?;
     std::fs::write(out_dir.join("clinical_report.md"), report_md)?;
     Ok(())
+}
+
+fn mean_off_diag(mat: ArrayView2<'_, f64>, take_abs: bool) -> f64 {
+    let (nr, nc) = mat.dim();
+    let mut sum = 0.0_f64;
+    let mut count = 0_usize;
+    for i in 0..nr {
+        for j in 0..nc {
+            if i == j {
+                continue;
+            }
+            let v = mat[[i, j]];
+            if v.is_finite() {
+                sum += if take_abs { v.abs() } else { v };
+                count += 1;
+            }
+        }
+    }
+    if count > 0 { sum / (count as f64) } else { 0.0 }
+}
+
+fn extract_network_name(label: &str) -> String {
+    let parts: Vec<&str> = label.split('_').collect();
+    if parts.len() >= 3 && (parts[1] == "LH" || parts[1] == "RH") {
+        format!("{}_{}", parts[1], parts[2])
+    } else if parts.len() >= 2 && (parts[0] == "LH" || parts[0] == "RH") {
+        format!("{}_{}", parts[0], parts[1])
+    } else {
+        "All_ROIs".to_string()
+    }
+}
+
+fn build_roi_and_network_metadata(
+    roi_ids: &[i32],
+    labels_json_path: Option<&str>,
+) -> (Vec<String>, Vec<String>, Vec<usize>) {
+    let all_labels: Option<Vec<String>> = labels_json_path.and_then(|p| {
+        if Path::new(p).exists() {
+            std::fs::read_to_string(p)
+                .ok()
+                .and_then(|txt| serde_json::from_str(&txt).ok())
+        } else {
+            None
+        }
+    });
+
+    let mut roi_labels = Vec::with_capacity(roi_ids.len());
+    for (idx, &id) in roi_ids.iter().enumerate() {
+        let lbl = all_labels
+            .as_ref()
+            .and_then(|vec| vec.get(id as usize).cloned())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| format!("ROI_{:03}", idx + 1));
+        roi_labels.push(lbl);
+    }
+
+    let mut net_map: BTreeMap<String, usize> = BTreeMap::new();
+    let mut raw_nets = Vec::with_capacity(roi_labels.len());
+    for lbl in &roi_labels {
+        let net = extract_network_name(lbl);
+        let len = net_map.len();
+        net_map.entry(net.clone()).or_insert(len);
+        raw_nets.push(net);
+    }
+    let network_names: Vec<String> = net_map.keys().cloned().collect();
+    let net_lookup: BTreeMap<String, usize> = network_names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (n.clone(), i))
+        .collect();
+    let roi_network_indices: Vec<usize> = raw_nets.iter().map(|n| net_lookup[n]).collect();
+
+    (roi_labels, network_names, roi_network_indices)
+}
+
+fn aggregate_network_matrix(
+    mat: ArrayView2<'_, f64>,
+    roi_net_idx: &[usize],
+    k: usize,
+) -> Vec<f32> {
+    if k == 0 {
+        return Vec::new();
+    }
+    let mut sums = vec![0.0_f64; k * k];
+    let mut counts = vec![0_usize; k * k];
+    let n = roi_net_idx.len().min(mat.nrows()).min(mat.ncols());
+    for i in 0..n {
+        let ci = roi_net_idx[i];
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let v = mat[[i, j]];
+            if v.is_finite() {
+                let cj = roi_net_idx[j];
+                sums[ci * k + cj] += v;
+                counts[ci * k + cj] += 1;
+            }
+        }
+    }
+    sums.into_iter()
+        .zip(counts)
+        .map(|(s, c)| if c > 0 { (s / c as f64) as f32 } else { 0.0 })
+        .collect()
 }
 
 pub fn run_lesion_aware_pipeline(
@@ -577,32 +834,41 @@ pub fn run_lesion_aware_pipeline(
 
     let mut confound_blocks: Vec<Array2<f64>> = Vec::new();
     let mut scrub_indices: Vec<usize> = Vec::new();
+    let mut fd_trace: Vec<f32> = vec![0.0; nt];
     if let Some(conf_path) = confounds_tsv_path {
-        let (motion_mat, fd_spikes) = load_confounds_tsv(Path::new(&conf_path), nt, fd_threshold_mm)?;
-        if motion_mat.ncols() > 0 {
-            confound_blocks.push(motion_mat);
+        if !conf_path.trim().is_empty() {
+            let (motion_mat, fd_spikes, fds) =
+                load_confounds_with_fd(Path::new(&conf_path), nt, fd_threshold_mm)?;
+            if motion_mat.ncols() > 0 {
+                confound_blocks.push(motion_mat);
+            }
+            scrub_indices = fd_spikes;
+            fd_trace = fds;
         }
-        scrub_indices = fd_spikes;
     }
 
     if let Some(wm_p) = wm_mask_path {
-        let raw_wm = load_mask_u8(Path::new(&wm_p))?;
-        let safe_wm = match &lesion_mask {
-            Some(lm) => subtract_lesion_from_mask(raw_wm.view(), lm.view(), lesion_dilate_voxels as usize)?,
-            None => raw_wm,
-        };
-        if safe_wm.iter().any(|&v| v > 0) {
-            confound_blocks.push(compute_acompcor(vol.view(), safe_wm.view(), 5)?);
+        if !wm_p.trim().is_empty() {
+            let raw_wm = load_mask_u8(Path::new(&wm_p))?;
+            let safe_wm = match &lesion_mask {
+                Some(lm) => subtract_lesion_from_mask(raw_wm.view(), lm.view(), lesion_dilate_voxels as usize)?,
+                None => raw_wm,
+            };
+            if safe_wm.iter().any(|&v| v > 0) {
+                confound_blocks.push(compute_acompcor(vol.view(), safe_wm.view(), 5)?);
+            }
         }
     }
     if let Some(csf_p) = csf_mask_path {
-        let raw_csf = load_mask_u8(Path::new(&csf_p))?;
-        let safe_csf = match &lesion_mask {
-            Some(lm) => subtract_lesion_from_mask(raw_csf.view(), lm.view(), lesion_dilate_voxels as usize)?,
-            None => raw_csf,
-        };
-        if safe_csf.iter().any(|&v| v > 0) {
-            confound_blocks.push(compute_acompcor(vol.view(), safe_csf.view(), 5)?);
+        if !csf_p.trim().is_empty() {
+            let raw_csf = load_mask_u8(Path::new(&csf_p))?;
+            let safe_csf = match &lesion_mask {
+                Some(lm) => subtract_lesion_from_mask(raw_csf.view(), lm.view(), lesion_dilate_voxels as usize)?,
+                None => raw_csf,
+            };
+            if safe_csf.iter().any(|&v| v > 0) {
+                confound_blocks.push(compute_acompcor(vol.view(), safe_csf.view(), 5)?);
+            }
         }
     }
 
@@ -612,6 +878,11 @@ pub fn run_lesion_aware_pipeline(
         let views: Vec<_> = confound_blocks.iter().map(|b| b.view()).collect();
         Some(concatenate(Axis(1), &views)?)
     };
+
+    // Raw FC & raw carpet before denoising (CONN QC baseline).
+    let raw_fc = static_fc_pearson(parc.timeseries.view())?;
+    let (raw_fc_hist, raw_fc_mean, raw_fc_sd) = compute_fc_histogram(raw_fc.view(), 41);
+    let (_, _, raw_carpet_rgba) = render_carpet_rgba(parc.timeseries.view());
 
     let low_opt = if low_hz > 0.0 { Some(low_hz) } else { None };
     let high_opt = if high_hz > 0.0 { Some(high_hz) } else { None };
@@ -626,6 +897,11 @@ pub fn run_lesion_aware_pipeline(
     )?;
 
     let fc = static_fc_pearson(clean_ts.view())?;
+    let (clean_fc_hist, clean_fc_mean, clean_fc_sd) = compute_fc_histogram(fc.view(), 41);
+    let fc_partial = compute_partial_correlation_ledoit_wolf(clean_ts.view())?;
+    let fc_gcmi = compute_gcmi_matrix(clean_ts.view());
+    let fc_te = compute_transfer_entropy_matrix(clean_ts.view(), 1);
+
     let graph = compute_nan_safe_graph_metrics(fc.view(), 0.0, None)?;
 
     let lesion_summary = lesion_mask.as_ref().map(|lm| {
@@ -635,23 +911,14 @@ pub fn run_lesion_aware_pipeline(
         .as_ref()
         .map_or_else(|| "None".to_string(), |s| s.dominant_hemisphere.clone());
 
-    let (mean_homotopic_fc, laterality_index) = if let Some(lbl_path) = atlas_labels_json_path {
-        if Path::new(&lbl_path).exists() {
-            let text = std::fs::read_to_string(&lbl_path)
-                .with_context(|| format!("Failed to read labels JSON {}", lbl_path))?;
-            let all_labels: Vec<String> = serde_json::from_str(&text)?;
-            let parcel_labels: Vec<String> = parc
-                .roi_ids
-                .iter()
-                .filter_map(|&id| all_labels.get(id as usize).cloned())
-                .collect();
-            if parcel_labels.len() == n_rois {
-                let (lh, rh) = detect_schaefer_hemispheres(&parcel_labels);
-                let hl = compute_homotopic_and_laterality(fc.view(), &lh, &rh, &dominant_hemi);
-                (hl.mean_homotopic_fc, hl.laterality_index)
-            } else {
-                (0.0, 0.0)
-            }
+    let (roi_labels, network_names, roi_network_indices) =
+        build_roi_and_network_metadata(&parc.roi_ids, atlas_labels_json_path.as_deref());
+
+    let (mean_homotopic_fc, laterality_index) = if roi_labels.len() == n_rois {
+        let (lh, rh) = detect_schaefer_hemispheres(&roi_labels);
+        if !lh.is_empty() && !rh.is_empty() {
+            let hl = compute_homotopic_and_laterality(fc.view(), &lh, &rh, &dominant_hemi);
+            (hl.mean_homotopic_fc, hl.laterality_index)
         } else {
             (0.0, 0.0)
         }
@@ -671,22 +938,35 @@ pub fn run_lesion_aware_pipeline(
         0.0
     };
 
-    let mut abs_sum = 0.0_f64;
-    let mut off_diag = 0_usize;
-    for i in 0..n_rois {
-        for j in (i + 1)..n_rois {
-            let v = fc[[i, j]];
-            if v.is_finite() {
-                abs_sum += v.abs();
-                off_diag += 1;
-            }
-        }
-    }
-    let mean_abs_fc = if off_diag > 0 { abs_sum / (off_diag as f64) } else { 0.0 };
-    let total_ms = t_total.elapsed().as_secs_f64() * 1000.0;
+    let mean_abs_fc = mean_off_diag(fc.view(), true);
+    let mean_abs_partial_fc = mean_off_diag(fc_partial.view(), true);
+    let mean_gcmi_bits = mean_off_diag(fc_gcmi.view(), false);
+    let mean_te_bits = mean_off_diag(fc_te.view(), false);
+    let mean_fd_mm = if fd_trace.is_empty() {
+        0.0
+    } else {
+        fd_trace.iter().map(|&v| v as f64).sum::<f64>() / (fd_trace.len() as f64)
+    };
+    let pct_scrubbed = if nt > 0 {
+        (scrub_indices.len() as f64) * 100.0 / (nt as f64)
+    } else {
+        0.0
+    };
+
+    let k = network_names.len();
+    let net_pearson_flat = aggregate_network_matrix(fc.view(), &roi_network_indices, k);
+    let net_partial_flat = aggregate_network_matrix(fc_partial.view(), &roi_network_indices, k);
+    let net_gcmi_flat = aggregate_network_matrix(fc_gcmi.view(), &roi_network_indices, k);
+    let net_te_flat = aggregate_network_matrix(fc_te.view(), &roi_network_indices, k);
 
     let (fc_preview_size, fc_preview_rgba) = render_fc_matrix_rgba(fc.view());
+    let (_, partial_preview_rgba) = render_fc_matrix_rgba(fc_partial.view());
+    let gcmi_preview_rgba = render_nonneg_matrix_rgba(fc_gcmi.view());
+    let te_preview_rgba = render_nonneg_matrix_rgba(fc_te.view());
     let (carpet_width, carpet_height, carpet_rgba) = render_carpet_rgba(clean_ts.view());
+
+    let scrubbed_u32: Vec<u32> = scrub_indices.iter().map(|&i| i as u32).collect();
+    let total_ms = t_total.elapsed().as_secs_f64() * 1000.0;
 
     let exported_dir = match out_dir {
         Some(ref dir) if !dir.trim().is_empty() => {
@@ -702,6 +982,12 @@ pub fn run_lesion_aware_pipeline(
                 "low_hz": low_hz,
                 "high_hz": high_hz,
                 "fd_threshold_mm": fd_threshold_mm,
+                "mean_fd_mm": mean_fd_mm,
+                "pct_scrubbed": pct_scrubbed,
+                "raw_fc_mean": raw_fc_mean,
+                "raw_fc_sd": raw_fc_sd,
+                "clean_fc_mean": clean_fc_mean,
+                "clean_fc_sd": clean_fc_sd,
                 "max_damage_pct": max_damage_pct,
                 "lesion_volume_ml": parc.total_lesion_volume_ml,
                 "dominant_hemisphere": dominant_hemi,
@@ -711,6 +997,9 @@ pub fn run_lesion_aware_pipeline(
                 "laterality_index": laterality_index,
                 "lesion_seed_mean_abs_r": lesion_seed_mean_abs_r,
                 "mean_abs_fc": mean_abs_fc,
+                "mean_abs_partial_fc": mean_abs_partial_fc,
+                "mean_gcmi_bits": mean_gcmi_bits,
+                "mean_te_bits": mean_te_bits,
                 "total_ms": total_ms,
             });
             let report_md = format!(
@@ -720,32 +1009,34 @@ pub fn run_lesion_aware_pipeline(
                 | **4D BOLD Input** | `{bold_path}` |\n\
                 | **Timepoints / TR** | {nt} volumes @ {tr_sec:.2} s |\n\
                 | **Intact / Total ROIs** | {}/{} (Excluded: {}) |\n\
-                | **Lesion Volume** | {:.2} mL ({}) |\n\
-                | **Mean |FC|** | {:.4} |\n\
+                | **CONN QC (Raw FC -> Clean FC)** | {raw_fc_mean:.3} ± {raw_fc_sd:.3} → {clean_fc_mean:.3} ± {clean_fc_sd:.3} |\n\
+                | **Mean FD / Scrubbed** | {mean_fd_mm:.3} mm / {pct_scrubbed:.1}% |\n\
+                | **Lesion Volume** | {:.2} mL ({dominant_hemi}) |\n\
+                | **Mean \\|Pearson FC\\|** | {mean_abs_fc:.4} |\n\
+                | **Mean \\|Partial FC\\| (Ledoit-Wolf)** | {mean_abs_partial_fc:.4} |\n\
+                | **Mean GCMI** | {mean_gcmi_bits:.4} bits |\n\
+                | **Mean Transfer Entropy** | {mean_te_bits:.4} bits |\n\
                 | **Global Efficiency** | {:.4} |\n\
                 | **Mean Node Strength** | {:.2} |\n\
-                | **Homotopic FC** | {:.4} |\n\
-                | **Laterality Index** | {:.4} |\n\
-                | **Lesion-Seed Mean |r|** | {:.4} |\n\
-                | **Rust Processing Time** | {:.1} ms (mmap: {}) |\n\n\
-                Generated files: `fc_matrix.csv`, `denoised_timeseries.csv`, `biomarkers_summary.json`, `clinical_report.md`\n",
+                | **Homotopic FC** | {mean_homotopic_fc:.4} |\n\
+                | **Laterality Index** | {laterality_index:.4} |\n\
+                | **Lesion-Seed Mean \\|r\\|** | {lesion_seed_mean_abs_r:.4} |\n\
+                | **Rust Processing Time** | {total_ms:.1} ms (mmap: {}) |\n\n\
+                Generated files: `fc_matrix.csv`, `partial_fc_matrix.csv`, `gcmi_matrix.csv`, `te_matrix.csv`, `denoised_timeseries.csv`, `biomarkers_summary.json`, `clinical_report.md`\n",
                 graph.n_intact_nodes,
                 n_rois,
                 graph.n_excluded_nodes,
                 parc.total_lesion_volume_ml,
-                dominant_hemi,
-                mean_abs_fc,
                 graph.global_efficiency,
                 graph.mean_node_strength,
-                mean_homotopic_fc,
-                laterality_index,
-                lesion_seed_mean_abs_r,
-                total_ms,
                 hdr.used_mmap,
             );
             export_lesion_pipeline_outputs(
                 Path::new(dir.trim()),
                 fc.view(),
+                Some(fc_partial.view()),
+                Some(fc_gcmi.view()),
+                Some(fc_te.view()),
                 clean_ts.view(),
                 &summary_json,
                 &report_md,
@@ -754,6 +1045,27 @@ pub fn run_lesion_aware_pipeline(
         }
         _ => None,
     };
+
+    // Save session in Rust memory for sub-millisecond interactive UI queries.
+    {
+        let mut guard = session_lock()
+            .write()
+            .map_err(|_| anyhow::anyhow!("Session cache write lock poisoned"))?;
+        *guard = Some(CachedSession {
+            raw_ts: parc.timeseries,
+            clean_ts,
+            tr_sec,
+            roi_labels: roi_labels.clone(),
+            network_names: network_names.clone(),
+            roi_network_indices: roi_network_indices.clone(),
+            fc_pearson: fc,
+            fc_partial,
+            fc_gcmi,
+            fc_te,
+            fd_trace: fd_trace.clone(),
+            scrubbed_indices: scrubbed_u32.clone(),
+        });
+    }
 
     Ok(LesionPipelineSummary {
         n_timepoints: nt as u32,
@@ -777,5 +1089,344 @@ pub fn run_lesion_aware_pipeline(
         carpet_width,
         carpet_height,
         exported_dir,
+        raw_fc_hist,
+        clean_fc_hist,
+        raw_fc_mean,
+        raw_fc_sd,
+        clean_fc_mean,
+        clean_fc_sd,
+        mean_fd_mm,
+        pct_scrubbed,
+        fd_trace,
+        scrubbed_indices: scrubbed_u32,
+        raw_carpet_rgba,
+        roi_labels,
+        network_names,
+        roi_network_indices: roi_network_indices.into_iter().map(|i| i as u32).collect(),
+        mean_abs_partial_fc,
+        mean_gcmi_bits,
+        mean_te_bits,
+        partial_preview_rgba,
+        gcmi_preview_rgba,
+        te_preview_rgba,
+        net_pearson_flat,
+        net_partial_flat,
+        net_gcmi_flat,
+        net_te_flat,
+    })
+}
+
+fn zscore_f32(vals: &[f64]) -> Vec<f32> {
+    let n = vals.len();
+    if n == 0 || vals.iter().any(|v| !v.is_finite()) {
+        return vec![0.0; n];
+    }
+    let mean = vals.iter().sum::<f64>() / (n as f64);
+    let var = vals.iter().map(|&v| (v - mean) * (v - mean)).sum::<f64>() / (n as f64);
+    let sd = var.sqrt().max(1e-9);
+    vals.iter().map(|&v| ((v - mean) / sd) as f32).collect()
+}
+
+pub fn get_roi_timeseries_detail(roi_indices: Vec<u32>) -> Result<RoiTimeseriesDetailDto> {
+    let guard = session_lock()
+        .read()
+        .map_err(|_| anyhow::anyhow!("Session cache read lock poisoned"))?;
+    let sess = guard
+        .as_ref()
+        .context("Run denoising in Step 4 first to populate session timeseries")?;
+
+    let (nt, n_rois) = sess.clean_ts.dim();
+    let fs = if sess.tr_sec > 0.0 { 1.0 / sess.tr_sec } else { 0.5 };
+    let nperseg = (nt / 2).max(16).min(nt);
+
+    let mut traces = Vec::new();
+    let mut valid_indices = Vec::new();
+    for raw_idx in roi_indices {
+        let r = raw_idx as usize;
+        if r >= n_rois {
+            continue;
+        }
+        valid_indices.push(r);
+        let raw_col: Vec<f64> = (0..nt).map(|t| sess.raw_ts[[t, r]]).collect();
+        let clean_col: Vec<f64> = (0..nt).map(|t| sess.clean_ts[[t, r]]).collect();
+        let is_intact = clean_col.iter().all(|v| v.is_finite());
+
+        let variance_removed_pct = if is_intact && raw_col.iter().all(|v| v.is_finite()) {
+            let raw_mean = raw_col.iter().sum::<f64>() / (nt as f64);
+            let clean_mean = clean_col.iter().sum::<f64>() / (nt as f64);
+            let raw_var = raw_col.iter().map(|&v| (v - raw_mean).powi(2)).sum::<f64>();
+            // Measure fraction of linear energy removed by projecting clean onto demeaned raw.
+            let proj_num: f64 = raw_col
+                .iter()
+                .zip(clean_col.iter())
+                .map(|(&rw, &cl)| (rw - raw_mean) * (cl - clean_mean))
+                .sum();
+            let clean_var = clean_col.iter().map(|&v| (v - clean_mean).powi(2)).sum::<f64>();
+            if raw_var > 1e-12 && clean_var > 1e-12 {
+                let r2 = ((proj_num * proj_num) / (raw_var * clean_var)).clamp(0.0, 1.0);
+                ((1.0 - r2) * 100.0).clamp(0.0, 100.0)
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
+        let raw_z = zscore_f32(&raw_col);
+        let clean_z = zscore_f32(&clean_col);
+        let raw_centered_f64: Vec<f64> = raw_z.iter().map(|&v| v as f64).collect();
+        let clean_centered_f64: Vec<f64> = clean_z.iter().map(|&v| v as f64).collect();
+        let (freqs, r_psd) = welch_psd(&raw_centered_f64, fs, nperseg);
+        let (_, c_psd) = welch_psd(&clean_centered_f64, fs, nperseg);
+
+        let net_name = sess
+            .roi_network_indices
+            .get(r)
+            .and_then(|&ni| sess.network_names.get(ni))
+            .cloned()
+            .unwrap_or_else(|| "Other".to_string());
+
+        traces.push(RoiTraceDto {
+            roi_index: raw_idx,
+            label: sess
+                .roi_labels
+                .get(r)
+                .cloned()
+                .unwrap_or_else(|| format!("ROI_{:03}", r + 1)),
+            network: net_name,
+            is_intact,
+            variance_removed_pct,
+            raw_z,
+            clean_z,
+            psd_freqs: freqs.into_iter().map(|f| f as f32).collect(),
+            raw_psd: r_psd.into_iter().map(|p| p as f32).collect(),
+            clean_psd: c_psd.into_iter().map(|p| p as f32).collect(),
+        });
+    }
+
+    let pairwise = if valid_indices.len() >= 2 {
+        let a = valid_indices[0];
+        let b = valid_indices[1];
+        Some(PairwiseCouplingDto {
+            roi_a: a as u32,
+            roi_b: b as u32,
+            label_a: sess.roi_labels[a].clone(),
+            label_b: sess.roi_labels[b].clone(),
+            pearson_r: sess.fc_pearson[[a, b]],
+            partial_r: sess.fc_partial[[a, b]],
+            gcmi_bits: sess.fc_gcmi[[a, b]],
+            te_a_to_b: sess.fc_te[[a, b]],
+            te_b_to_a: sess.fc_te[[b, a]],
+        })
+    } else {
+        None
+    };
+
+    Ok(RoiTimeseriesDetailDto {
+        tr_sec: sess.tr_sec,
+        fd_trace: sess.fd_trace.clone(),
+        scrubbed_indices: sess.scrubbed_indices.clone(),
+        traces,
+        pairwise,
+    })
+}
+
+pub fn get_top_hubs(metric: String, top_k: u32) -> Result<Vec<RoiHubDto>> {
+    let guard = session_lock()
+        .read()
+        .map_err(|_| anyhow::anyhow!("Session cache read lock poisoned"))?;
+    let sess = guard
+        .as_ref()
+        .context("Run denoising in Step 4 first")?;
+
+    let n = sess.roi_labels.len();
+    let mode = metric.to_ascii_lowercase();
+    let mut hubs = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let mut sum = 0.0_f64;
+        let mut count = 0_usize;
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let val = match mode.as_str() {
+                "partial" => sess.fc_partial[[i, j]].abs(),
+                "gcmi" => sess.fc_gcmi[[i, j]],
+                "te_out" => sess.fc_te[[i, j]],
+                "te_in" => sess.fc_te[[j, i]],
+                _ => sess.fc_pearson[[i, j]].abs(),
+            };
+            if val.is_finite() {
+                sum += val;
+                count += 1;
+            }
+        }
+        if count > 0 {
+            let net_name = sess
+                .roi_network_indices
+                .get(i)
+                .and_then(|&ni| sess.network_names.get(ni))
+                .cloned()
+                .unwrap_or_else(|| "Other".to_string());
+            hubs.push(RoiHubDto {
+                roi_index: i as u32,
+                label: sess.roi_labels[i].clone(),
+                network: net_name,
+                score: sum / (count as f64),
+            });
+        }
+    }
+
+    hubs.sort_by(|a, b| b.score.total_cmp(&a.score));
+    hubs.truncate((top_k as usize).max(1));
+    Ok(hubs)
+}
+
+pub fn compute_cached_dynamics(
+    window_len: u32,
+    step: u32,
+    low_hz: f64,
+    high_hz: f64,
+    out_dir: Option<String>,
+) -> Result<DynamicsSummaryDto> {
+    let guard = session_lock()
+        .read()
+        .map_err(|_| anyhow::anyhow!("Session cache read lock poisoned"))?;
+    let sess = guard
+        .as_ref()
+        .context("Run denoising in Step 4 before computing dynamics")?;
+
+    let rows = compute_sliding_dynamics(
+        sess.clean_ts.view(),
+        sess.tr_sec,
+        (window_len as usize).max(16),
+        (step as usize).max(1),
+        low_hz,
+        high_hz,
+    )?;
+
+    fn avg(vals: &[f64]) -> (f64, f64) {
+        let fin: Vec<f64> = vals.iter().copied().filter(|v| v.is_finite()).collect();
+        if fin.is_empty() {
+            return (0.0, 0.0);
+        }
+        let m = fin.iter().sum::<f64>() / (fin.len() as f64);
+        let var = fin.iter().map(|&v| (v - m) * (v - m)).sum::<f64>() / (fin.len() as f64);
+        (m, var.sqrt())
+    }
+
+    let intact_rows: Vec<_> = rows.iter().filter(|r| r.is_intact).collect();
+    let (acw0_m, _) = avg(&intact_rows.iter().map(|r| r.acw0_mean).collect::<Vec<_>>());
+    let (acw50_m, _) = avg(&intact_rows.iter().map(|r| r.acw50_mean).collect::<Vec<_>>());
+    let (aucr_m, _) = avg(&intact_rows.iter().map(|r| r.auc_rect_mean).collect::<Vec<_>>());
+    let (auct_m, _) = avg(&intact_rows.iter().map(|r| r.auc_trap_mean).collect::<Vec<_>>());
+    let (lzc_m, _) = avg(&intact_rows.iter().map(|r| r.lzc_mean).collect::<Vec<_>>());
+    let (sampen_m, _) = avg(&intact_rows.iter().map(|r| r.sampen_mean).collect::<Vec<_>>());
+    let (medf_m, _) = avg(&intact_rows.iter().map(|r| r.med_f_mean).collect::<Vec<_>>());
+    let (se_m, _) = avg(&intact_rows.iter().map(|r| r.se_mean).collect::<Vec<_>>());
+    let (ple_m, _) = avg(&intact_rows.iter().map(|r| r.ple_mean).collect::<Vec<_>>());
+
+    let mut net_summaries = Vec::with_capacity(sess.network_names.len());
+    for (net_idx, net_name) in sess.network_names.iter().enumerate() {
+        let nr: Vec<_> = intact_rows
+            .iter()
+            .copied()
+            .filter(|r| sess.roi_network_indices.get(r.roi_index) == Some(&net_idx))
+            .collect();
+        let (a0m, a0s) = avg(&nr.iter().map(|r| r.acw0_mean).collect::<Vec<_>>());
+        let (a50m, a50s) = avg(&nr.iter().map(|r| r.acw50_mean).collect::<Vec<_>>());
+        let (rm, _) = avg(&nr.iter().map(|r| r.auc_rect_mean).collect::<Vec<_>>());
+        let (tm, _) = avg(&nr.iter().map(|r| r.auc_trap_mean).collect::<Vec<_>>());
+        let (lm, ls) = avg(&nr.iter().map(|r| r.lzc_mean).collect::<Vec<_>>());
+        let (sm, ss) = avg(&nr.iter().map(|r| r.sampen_mean).collect::<Vec<_>>());
+        let (mfm, _) = avg(&nr.iter().map(|r| r.med_f_mean).collect::<Vec<_>>());
+        let (sem, _) = avg(&nr.iter().map(|r| r.se_mean).collect::<Vec<_>>());
+        let (pm, ps) = avg(&nr.iter().map(|r| r.ple_mean).collect::<Vec<_>>());
+
+        net_summaries.push(NetworkDynamicsDto {
+            network_name: net_name.clone(),
+            n_intact_rois: nr.len() as u32,
+            acw0_mean: a0m,
+            acw0_sd: a0s,
+            acw50_mean: a50m,
+            acw50_sd: a50s,
+            auc_rect_mean: rm,
+            auc_trap_mean: tm,
+            lzc_mean: lm,
+            lzc_sd: ls,
+            sampen_mean: sm,
+            sampen_sd: ss,
+            med_f_mean: mfm,
+            se_mean: sem,
+            ple_mean: pm,
+            ple_sd: ps,
+        });
+    }
+
+    let exported_csv_path = match out_dir {
+        Some(ref dir) if !dir.trim().is_empty() => {
+            let p = Path::new(dir.trim());
+            std::fs::create_dir_all(p)?;
+            let csv_path = p.join("roi_dynamics.csv");
+            let f = std::fs::File::create(&csv_path)?;
+            let mut w = BufWriter::new(f);
+            writeln!(
+                w,
+                "roi_index,label,network,intact,acw0,acw50,auc_rect,auc_trap,lzc,sampen,med_f,se,ple,acw0_std,acw50_std,lzc_std,sampen_std,ple_std"
+            )?;
+            for r in &rows {
+                let lbl = sess.roi_labels.get(r.roi_index).map_or("", String::as_str);
+                let net = sess
+                    .roi_network_indices
+                    .get(r.roi_index)
+                    .and_then(|&ni| sess.network_names.get(ni))
+                    .map_or("Other", String::as_str);
+                writeln!(
+                    w,
+                    "{},{},{},{},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5},{:.5}",
+                    r.roi_index,
+                    lbl,
+                    net,
+                    r.is_intact,
+                    r.acw0_mean,
+                    r.acw50_mean,
+                    r.auc_rect_mean,
+                    r.auc_trap_mean,
+                    r.lzc_mean,
+                    r.sampen_mean,
+                    r.med_f_mean,
+                    r.se_mean,
+                    r.ple_mean,
+                    r.acw0_std,
+                    r.acw50_std,
+                    r.lzc_std,
+                    r.sampen_std,
+                    r.ple_std,
+                )?;
+            }
+            w.flush()?;
+            Some(csv_path.display().to_string())
+        }
+        _ => None,
+    };
+
+    Ok(DynamicsSummaryDto {
+        n_intact_rois: intact_rows.len() as u32,
+        low_hz,
+        high_hz,
+        window_len,
+        step,
+        acw0_mean: acw0_m,
+        acw50_mean: acw50_m,
+        auc_rect_mean: aucr_m,
+        auc_trap_mean: auct_m,
+        lzc_mean: lzc_m,
+        sampen_mean: sampen_m,
+        med_f_mean: medf_m,
+        se_mean: se_m,
+        ple_mean: ple_m,
+        networks: net_summaries,
+        exported_csv_path,
     })
 }

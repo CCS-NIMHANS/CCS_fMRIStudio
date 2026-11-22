@@ -292,12 +292,12 @@ pub fn simultaneous_denoise(
     Ok(out)
 }
 
-/// Loads BIDS-style confounds TSV (motion + derivatives) and identifies scrubbing frame indices.
-pub fn load_confounds_tsv(
+/// Loads BIDS-style confounds TSV, returning regression columns, FD scrub indices, and FD mm trace.
+pub fn load_confounds_with_fd(
     path: &Path,
     expected_rows: usize,
     fd_threshold_mm: f64,
-) -> Result<(Array2<f64>, Vec<usize>)> {
+) -> Result<(Array2<f64>, Vec<usize>, Vec<f32>)> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read confounds TSV from {}", path.display()))?;
     let mut lines = text.lines().filter(|l| !l.trim().is_empty());
@@ -332,16 +332,27 @@ pub fn load_confounds_tsv(
 
     let mut mat = Array2::<f64>::zeros((rows.len(), reg_cols.len()));
     let mut scrub = Vec::new();
+    let mut fd_trace = Vec::with_capacity(rows.len());
     for (r, row) in rows.iter().enumerate() {
         for (c_out, &c_in) in reg_cols.iter().enumerate() {
             mat[[r, c_out]] = *row.get(c_in).unwrap_or(&0.0);
         }
-        if let Some(fc) = fd_col {
-            if fd_threshold_mm > 0.0 && *row.get(fc).unwrap_or(&0.0) > fd_threshold_mm {
-                scrub.push(r);
-            }
+        let fd_val = fd_col.map_or(0.0, |fc| *row.get(fc).unwrap_or(&0.0));
+        fd_trace.push(fd_val as f32);
+        if fd_col.is_some() && fd_threshold_mm > 0.0 && fd_val > fd_threshold_mm {
+            scrub.push(r);
         }
     }
 
+    Ok((mat, scrub, fd_trace))
+}
+
+/// Loads BIDS-style confounds TSV (motion + derivatives) and identifies scrubbing frame indices.
+pub fn load_confounds_tsv(
+    path: &Path,
+    expected_rows: usize,
+    fd_threshold_mm: f64,
+) -> Result<(Array2<f64>, Vec<usize>)> {
+    let (mat, scrub, _) = load_confounds_with_fd(path, expected_rows, fd_threshold_mm)?;
     Ok((mat, scrub))
 }

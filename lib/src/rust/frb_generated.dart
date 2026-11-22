@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1668885918;
+  int get rustContentHash => 575895238;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -81,6 +81,14 @@ abstract class RustLibApi extends BaseApi {
     String? flairPath,
     required double zThreshold,
     required String outMaskPath,
+  });
+
+  Future<DynamicsSummaryDto> crateApiComputeCachedDynamics({
+    required int windowLen,
+    required int step,
+    required double lowHz,
+    required double highHz,
+    String? outDir,
   });
 
   Future<LesionSummaryDto> crateApiEditLesionMaskBrush({
@@ -106,6 +114,15 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<EngineInfo> crateApiEngineInfo();
+
+  Future<RoiTimeseriesDetailDto> crateApiGetRoiTimeseriesDetail({
+    required List<int> roiIndices,
+  });
+
+  Future<List<RoiHubDto>> crateApiGetTopHubs({
+    required String metric,
+    required int topK,
+  });
 
   Future<NiftiHeaderSummary> crateApiInspectNifti({required String path});
 
@@ -209,6 +226,47 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<DynamicsSummaryDto> crateApiComputeCachedDynamics({
+    required int windowLen,
+    required int step,
+    required double lowHz,
+    required double highHz,
+    String? outDir,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_32(windowLen, serializer);
+          sse_encode_u_32(step, serializer);
+          sse_encode_f_64(lowHz, serializer);
+          sse_encode_f_64(highHz, serializer);
+          sse_encode_opt_String(outDir, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_dynamics_summary_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiComputeCachedDynamicsConstMeta,
+        argValues: [windowLen, step, lowHz, highHz, outDir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiComputeCachedDynamicsConstMeta =>
+      const TaskConstMeta(
+        debugName: "compute_cached_dynamics",
+        argNames: ["windowLen", "step", "lowHz", "highHz", "outDir"],
+      );
+
+  @override
   Future<LesionSummaryDto> crateApiEditLesionMaskBrush({
     required String maskPath,
     required String refNiftiPath,
@@ -236,7 +294,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 3,
             port: port_,
           );
         },
@@ -301,7 +359,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -347,7 +405,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -366,6 +424,73 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "engine_info", argNames: []);
 
   @override
+  Future<RoiTimeseriesDetailDto> crateApiGetRoiTimeseriesDetail({
+    required List<int> roiIndices,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_list_prim_u_32_loose(roiIndices, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 6,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_roi_timeseries_detail_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiGetRoiTimeseriesDetailConstMeta,
+        argValues: [roiIndices],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiGetRoiTimeseriesDetailConstMeta =>
+      const TaskConstMeta(
+        debugName: "get_roi_timeseries_detail",
+        argNames: ["roiIndices"],
+      );
+
+  @override
+  Future<List<RoiHubDto>> crateApiGetTopHubs({
+    required String metric,
+    required int topK,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(metric, serializer);
+          sse_encode_u_32(topK, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 7,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_list_roi_hub_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiGetTopHubsConstMeta,
+        argValues: [metric, topK],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiGetTopHubsConstMeta => const TaskConstMeta(
+    debugName: "get_top_hubs",
+    argNames: ["metric", "topK"],
+  );
+
+  @override
   Future<NiftiHeaderSummary> crateApiInspectNifti({required String path}) {
     return handler.executeNormal(
       NormalTask(
@@ -375,7 +500,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 8,
             port: port_,
           );
         },
@@ -413,7 +538,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 9,
             port: port_,
           );
         },
@@ -458,7 +583,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 10,
             port: port_,
           );
         },
@@ -500,7 +625,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 11,
             port: port_,
           );
         },
@@ -571,7 +696,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 12,
             port: port_,
           );
         },
@@ -646,7 +771,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 13,
             port: port_,
           );
         },
@@ -704,6 +829,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PairwiseCouplingDto dco_decode_box_autoadd_pairwise_coupling_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_pairwise_coupling_dto(raw);
+  }
+
+  @protected
   DenoisePipelineSummary dco_decode_denoise_pipeline_summary(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -721,6 +854,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       fcMs: dco_decode_f_64(arr[8]),
       totalMs: dco_decode_f_64(arr[9]),
       meanAbsFc: dco_decode_f_64(arr[10]),
+    );
+  }
+
+  @protected
+  DynamicsSummaryDto dco_decode_dynamics_summary_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    return DynamicsSummaryDto(
+      nIntactRois: dco_decode_u_32(arr[0]),
+      lowHz: dco_decode_f_64(arr[1]),
+      highHz: dco_decode_f_64(arr[2]),
+      windowLen: dco_decode_u_32(arr[3]),
+      step: dco_decode_u_32(arr[4]),
+      acw0Mean: dco_decode_f_64(arr[5]),
+      acw50Mean: dco_decode_f_64(arr[6]),
+      aucRectMean: dco_decode_f_64(arr[7]),
+      aucTrapMean: dco_decode_f_64(arr[8]),
+      lzcMean: dco_decode_f_64(arr[9]),
+      sampenMean: dco_decode_f_64(arr[10]),
+      medFMean: dco_decode_f_64(arr[11]),
+      seMean: dco_decode_f_64(arr[12]),
+      pleMean: dco_decode_f_64(arr[13]),
+      networks: dco_decode_list_network_dynamics_dto(arr[14]),
+      exportedCsvPath: dco_decode_opt_String(arr[15]),
     );
   }
 
@@ -759,8 +918,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   LesionPipelineSummary dco_decode_lesion_pipeline_summary(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 21)
-      throw Exception('unexpected arr length: expect 21 but see ${arr.length}');
+    if (arr.length != 45)
+      throw Exception('unexpected arr length: expect 45 but see ${arr.length}');
     return LesionPipelineSummary(
       nTimepoints: dco_decode_u_32(arr[0]),
       nRois: dco_decode_u_32(arr[1]),
@@ -783,6 +942,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       carpetWidth: dco_decode_u_32(arr[18]),
       carpetHeight: dco_decode_u_32(arr[19]),
       exportedDir: dco_decode_opt_String(arr[20]),
+      rawFcHist: dco_decode_list_prim_f_32_strict(arr[21]),
+      cleanFcHist: dco_decode_list_prim_f_32_strict(arr[22]),
+      rawFcMean: dco_decode_f_64(arr[23]),
+      rawFcSd: dco_decode_f_64(arr[24]),
+      cleanFcMean: dco_decode_f_64(arr[25]),
+      cleanFcSd: dco_decode_f_64(arr[26]),
+      meanFdMm: dco_decode_f_64(arr[27]),
+      pctScrubbed: dco_decode_f_64(arr[28]),
+      fdTrace: dco_decode_list_prim_f_32_strict(arr[29]),
+      scrubbedIndices: dco_decode_list_prim_u_32_strict(arr[30]),
+      rawCarpetRgba: dco_decode_list_prim_u_8_strict(arr[31]),
+      roiLabels: dco_decode_list_String(arr[32]),
+      networkNames: dco_decode_list_String(arr[33]),
+      roiNetworkIndices: dco_decode_list_prim_u_32_strict(arr[34]),
+      meanAbsPartialFc: dco_decode_f_64(arr[35]),
+      meanGcmiBits: dco_decode_f_64(arr[36]),
+      meanTeBits: dco_decode_f_64(arr[37]),
+      partialPreviewRgba: dco_decode_list_prim_u_8_strict(arr[38]),
+      gcmiPreviewRgba: dco_decode_list_prim_u_8_strict(arr[39]),
+      tePreviewRgba: dco_decode_list_prim_u_8_strict(arr[40]),
+      netPearsonFlat: dco_decode_list_prim_f_32_strict(arr[41]),
+      netPartialFlat: dco_decode_list_prim_f_32_strict(arr[42]),
+      netGcmiFlat: dco_decode_list_prim_f_32_strict(arr[43]),
+      netTeFlat: dco_decode_list_prim_f_32_strict(arr[44]),
     );
   }
 
@@ -802,9 +985,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<String> dco_decode_list_String(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_String).toList();
+  }
+
+  @protected
+  List<NetworkDynamicsDto> dco_decode_list_network_dynamics_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_network_dynamics_dto).toList();
+  }
+
+  @protected
   Float32List dco_decode_list_prim_f_32_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Float32List;
+  }
+
+  @protected
+  List<int> dco_decode_list_prim_u_32_loose(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as List<int>;
   }
 
   @protected
@@ -817,6 +1018,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  List<RoiHubDto> dco_decode_list_roi_hub_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_roi_hub_dto).toList();
+  }
+
+  @protected
+  List<RoiTraceDto> dco_decode_list_roi_trace_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_roi_trace_dto).toList();
+  }
+
+  @protected
+  NetworkDynamicsDto dco_decode_network_dynamics_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 16)
+      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    return NetworkDynamicsDto(
+      networkName: dco_decode_String(arr[0]),
+      nIntactRois: dco_decode_u_32(arr[1]),
+      acw0Mean: dco_decode_f_64(arr[2]),
+      acw0Sd: dco_decode_f_64(arr[3]),
+      acw50Mean: dco_decode_f_64(arr[4]),
+      acw50Sd: dco_decode_f_64(arr[5]),
+      aucRectMean: dco_decode_f_64(arr[6]),
+      aucTrapMean: dco_decode_f_64(arr[7]),
+      lzcMean: dco_decode_f_64(arr[8]),
+      lzcSd: dco_decode_f_64(arr[9]),
+      sampenMean: dco_decode_f_64(arr[10]),
+      sampenSd: dco_decode_f_64(arr[11]),
+      medFMean: dco_decode_f_64(arr[12]),
+      seMean: dco_decode_f_64(arr[13]),
+      pleMean: dco_decode_f_64(arr[14]),
+      pleSd: dco_decode_f_64(arr[15]),
+    );
   }
 
   @protected
@@ -838,6 +1077,84 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   String? dco_decode_opt_String(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_String(raw);
+  }
+
+  @protected
+  PairwiseCouplingDto? dco_decode_opt_box_autoadd_pairwise_coupling_dto(
+    dynamic raw,
+  ) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null
+        ? null
+        : dco_decode_box_autoadd_pairwise_coupling_dto(raw);
+  }
+
+  @protected
+  PairwiseCouplingDto dco_decode_pairwise_coupling_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
+    return PairwiseCouplingDto(
+      roiA: dco_decode_u_32(arr[0]),
+      roiB: dco_decode_u_32(arr[1]),
+      labelA: dco_decode_String(arr[2]),
+      labelB: dco_decode_String(arr[3]),
+      pearsonR: dco_decode_f_64(arr[4]),
+      partialR: dco_decode_f_64(arr[5]),
+      gcmiBits: dco_decode_f_64(arr[6]),
+      teAToB: dco_decode_f_64(arr[7]),
+      teBToA: dco_decode_f_64(arr[8]),
+    );
+  }
+
+  @protected
+  RoiHubDto dco_decode_roi_hub_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return RoiHubDto(
+      roiIndex: dco_decode_u_32(arr[0]),
+      label: dco_decode_String(arr[1]),
+      network: dco_decode_String(arr[2]),
+      score: dco_decode_f_64(arr[3]),
+    );
+  }
+
+  @protected
+  RoiTimeseriesDetailDto dco_decode_roi_timeseries_detail_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return RoiTimeseriesDetailDto(
+      trSec: dco_decode_f_64(arr[0]),
+      fdTrace: dco_decode_list_prim_f_32_strict(arr[1]),
+      scrubbedIndices: dco_decode_list_prim_u_32_strict(arr[2]),
+      traces: dco_decode_list_roi_trace_dto(arr[3]),
+      pairwise: dco_decode_opt_box_autoadd_pairwise_coupling_dto(arr[4]),
+    );
+  }
+
+  @protected
+  RoiTraceDto dco_decode_roi_trace_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return RoiTraceDto(
+      roiIndex: dco_decode_u_32(arr[0]),
+      label: dco_decode_String(arr[1]),
+      network: dco_decode_String(arr[2]),
+      isIntact: dco_decode_bool(arr[3]),
+      varianceRemovedPct: dco_decode_f_64(arr[4]),
+      rawZ: dco_decode_list_prim_f_32_strict(arr[5]),
+      cleanZ: dco_decode_list_prim_f_32_strict(arr[6]),
+      psdFreqs: dco_decode_list_prim_f_32_strict(arr[7]),
+      rawPsd: dco_decode_list_prim_f_32_strict(arr[8]),
+      cleanPsd: dco_decode_list_prim_f_32_strict(arr[9]),
+    );
   }
 
   @protected
@@ -906,6 +1223,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  PairwiseCouplingDto sse_decode_box_autoadd_pairwise_coupling_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_pairwise_coupling_dto(deserializer));
+  }
+
+  @protected
   DenoisePipelineSummary sse_decode_denoise_pipeline_summary(
     SseDeserializer deserializer,
   ) {
@@ -933,6 +1258,47 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       fcMs: var_fcMs,
       totalMs: var_totalMs,
       meanAbsFc: var_meanAbsFc,
+    );
+  }
+
+  @protected
+  DynamicsSummaryDto sse_decode_dynamics_summary_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_nIntactRois = sse_decode_u_32(deserializer);
+    var var_lowHz = sse_decode_f_64(deserializer);
+    var var_highHz = sse_decode_f_64(deserializer);
+    var var_windowLen = sse_decode_u_32(deserializer);
+    var var_step = sse_decode_u_32(deserializer);
+    var var_acw0Mean = sse_decode_f_64(deserializer);
+    var var_acw50Mean = sse_decode_f_64(deserializer);
+    var var_aucRectMean = sse_decode_f_64(deserializer);
+    var var_aucTrapMean = sse_decode_f_64(deserializer);
+    var var_lzcMean = sse_decode_f_64(deserializer);
+    var var_sampenMean = sse_decode_f_64(deserializer);
+    var var_medFMean = sse_decode_f_64(deserializer);
+    var var_seMean = sse_decode_f_64(deserializer);
+    var var_pleMean = sse_decode_f_64(deserializer);
+    var var_networks = sse_decode_list_network_dynamics_dto(deserializer);
+    var var_exportedCsvPath = sse_decode_opt_String(deserializer);
+    return DynamicsSummaryDto(
+      nIntactRois: var_nIntactRois,
+      lowHz: var_lowHz,
+      highHz: var_highHz,
+      windowLen: var_windowLen,
+      step: var_step,
+      acw0Mean: var_acw0Mean,
+      acw50Mean: var_acw50Mean,
+      aucRectMean: var_aucRectMean,
+      aucTrapMean: var_aucTrapMean,
+      lzcMean: var_lzcMean,
+      sampenMean: var_sampenMean,
+      medFMean: var_medFMean,
+      seMean: var_seMean,
+      pleMean: var_pleMean,
+      networks: var_networks,
+      exportedCsvPath: var_exportedCsvPath,
     );
   }
 
@@ -993,6 +1359,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_carpetWidth = sse_decode_u_32(deserializer);
     var var_carpetHeight = sse_decode_u_32(deserializer);
     var var_exportedDir = sse_decode_opt_String(deserializer);
+    var var_rawFcHist = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_cleanFcHist = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_rawFcMean = sse_decode_f_64(deserializer);
+    var var_rawFcSd = sse_decode_f_64(deserializer);
+    var var_cleanFcMean = sse_decode_f_64(deserializer);
+    var var_cleanFcSd = sse_decode_f_64(deserializer);
+    var var_meanFdMm = sse_decode_f_64(deserializer);
+    var var_pctScrubbed = sse_decode_f_64(deserializer);
+    var var_fdTrace = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_scrubbedIndices = sse_decode_list_prim_u_32_strict(deserializer);
+    var var_rawCarpetRgba = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_roiLabels = sse_decode_list_String(deserializer);
+    var var_networkNames = sse_decode_list_String(deserializer);
+    var var_roiNetworkIndices = sse_decode_list_prim_u_32_strict(deserializer);
+    var var_meanAbsPartialFc = sse_decode_f_64(deserializer);
+    var var_meanGcmiBits = sse_decode_f_64(deserializer);
+    var var_meanTeBits = sse_decode_f_64(deserializer);
+    var var_partialPreviewRgba = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_gcmiPreviewRgba = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_tePreviewRgba = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_netPearsonFlat = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_netPartialFlat = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_netGcmiFlat = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_netTeFlat = sse_decode_list_prim_f_32_strict(deserializer);
     return LesionPipelineSummary(
       nTimepoints: var_nTimepoints,
       nRois: var_nRois,
@@ -1015,6 +1405,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       carpetWidth: var_carpetWidth,
       carpetHeight: var_carpetHeight,
       exportedDir: var_exportedDir,
+      rawFcHist: var_rawFcHist,
+      cleanFcHist: var_cleanFcHist,
+      rawFcMean: var_rawFcMean,
+      rawFcSd: var_rawFcSd,
+      cleanFcMean: var_cleanFcMean,
+      cleanFcSd: var_cleanFcSd,
+      meanFdMm: var_meanFdMm,
+      pctScrubbed: var_pctScrubbed,
+      fdTrace: var_fdTrace,
+      scrubbedIndices: var_scrubbedIndices,
+      rawCarpetRgba: var_rawCarpetRgba,
+      roiLabels: var_roiLabels,
+      networkNames: var_networkNames,
+      roiNetworkIndices: var_roiNetworkIndices,
+      meanAbsPartialFc: var_meanAbsPartialFc,
+      meanGcmiBits: var_meanGcmiBits,
+      meanTeBits: var_meanTeBits,
+      partialPreviewRgba: var_partialPreviewRgba,
+      gcmiPreviewRgba: var_gcmiPreviewRgba,
+      tePreviewRgba: var_tePreviewRgba,
+      netPearsonFlat: var_netPearsonFlat,
+      netPartialFlat: var_netPartialFlat,
+      netGcmiFlat: var_netGcmiFlat,
+      netTeFlat: var_netTeFlat,
     );
   }
 
@@ -1036,10 +1450,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <String>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_String(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<NetworkDynamicsDto> sse_decode_list_network_dynamics_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <NetworkDynamicsDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_network_dynamics_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   Float32List sse_decode_list_prim_f_32_strict(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getFloat32List(len_);
+  }
+
+  @protected
+  List<int> sse_decode_list_prim_u_32_loose(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var len_ = sse_decode_i_32(deserializer);
+    return deserializer.buffer.getUint32List(len_);
   }
 
   @protected
@@ -1054,6 +1501,73 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  List<RoiHubDto> sse_decode_list_roi_hub_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RoiHubDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_roi_hub_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<RoiTraceDto> sse_decode_list_roi_trace_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RoiTraceDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_roi_trace_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  NetworkDynamicsDto sse_decode_network_dynamics_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_networkName = sse_decode_String(deserializer);
+    var var_nIntactRois = sse_decode_u_32(deserializer);
+    var var_acw0Mean = sse_decode_f_64(deserializer);
+    var var_acw0Sd = sse_decode_f_64(deserializer);
+    var var_acw50Mean = sse_decode_f_64(deserializer);
+    var var_acw50Sd = sse_decode_f_64(deserializer);
+    var var_aucRectMean = sse_decode_f_64(deserializer);
+    var var_aucTrapMean = sse_decode_f_64(deserializer);
+    var var_lzcMean = sse_decode_f_64(deserializer);
+    var var_lzcSd = sse_decode_f_64(deserializer);
+    var var_sampenMean = sse_decode_f_64(deserializer);
+    var var_sampenSd = sse_decode_f_64(deserializer);
+    var var_medFMean = sse_decode_f_64(deserializer);
+    var var_seMean = sse_decode_f_64(deserializer);
+    var var_pleMean = sse_decode_f_64(deserializer);
+    var var_pleSd = sse_decode_f_64(deserializer);
+    return NetworkDynamicsDto(
+      networkName: var_networkName,
+      nIntactRois: var_nIntactRois,
+      acw0Mean: var_acw0Mean,
+      acw0Sd: var_acw0Sd,
+      acw50Mean: var_acw50Mean,
+      acw50Sd: var_acw50Sd,
+      aucRectMean: var_aucRectMean,
+      aucTrapMean: var_aucTrapMean,
+      lzcMean: var_lzcMean,
+      lzcSd: var_lzcSd,
+      sampenMean: var_sampenMean,
+      sampenSd: var_sampenSd,
+      medFMean: var_medFMean,
+      seMean: var_seMean,
+      pleMean: var_pleMean,
+      pleSd: var_pleSd,
+    );
   }
 
   @protected
@@ -1084,6 +1598,109 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     } else {
       return null;
     }
+  }
+
+  @protected
+  PairwiseCouplingDto? sse_decode_opt_box_autoadd_pairwise_coupling_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_pairwise_coupling_dto(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  PairwiseCouplingDto sse_decode_pairwise_coupling_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_roiA = sse_decode_u_32(deserializer);
+    var var_roiB = sse_decode_u_32(deserializer);
+    var var_labelA = sse_decode_String(deserializer);
+    var var_labelB = sse_decode_String(deserializer);
+    var var_pearsonR = sse_decode_f_64(deserializer);
+    var var_partialR = sse_decode_f_64(deserializer);
+    var var_gcmiBits = sse_decode_f_64(deserializer);
+    var var_teAToB = sse_decode_f_64(deserializer);
+    var var_teBToA = sse_decode_f_64(deserializer);
+    return PairwiseCouplingDto(
+      roiA: var_roiA,
+      roiB: var_roiB,
+      labelA: var_labelA,
+      labelB: var_labelB,
+      pearsonR: var_pearsonR,
+      partialR: var_partialR,
+      gcmiBits: var_gcmiBits,
+      teAToB: var_teAToB,
+      teBToA: var_teBToA,
+    );
+  }
+
+  @protected
+  RoiHubDto sse_decode_roi_hub_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_roiIndex = sse_decode_u_32(deserializer);
+    var var_label = sse_decode_String(deserializer);
+    var var_network = sse_decode_String(deserializer);
+    var var_score = sse_decode_f_64(deserializer);
+    return RoiHubDto(
+      roiIndex: var_roiIndex,
+      label: var_label,
+      network: var_network,
+      score: var_score,
+    );
+  }
+
+  @protected
+  RoiTimeseriesDetailDto sse_decode_roi_timeseries_detail_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_trSec = sse_decode_f_64(deserializer);
+    var var_fdTrace = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_scrubbedIndices = sse_decode_list_prim_u_32_strict(deserializer);
+    var var_traces = sse_decode_list_roi_trace_dto(deserializer);
+    var var_pairwise = sse_decode_opt_box_autoadd_pairwise_coupling_dto(
+      deserializer,
+    );
+    return RoiTimeseriesDetailDto(
+      trSec: var_trSec,
+      fdTrace: var_fdTrace,
+      scrubbedIndices: var_scrubbedIndices,
+      traces: var_traces,
+      pairwise: var_pairwise,
+    );
+  }
+
+  @protected
+  RoiTraceDto sse_decode_roi_trace_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_roiIndex = sse_decode_u_32(deserializer);
+    var var_label = sse_decode_String(deserializer);
+    var var_network = sse_decode_String(deserializer);
+    var var_isIntact = sse_decode_bool(deserializer);
+    var var_varianceRemovedPct = sse_decode_f_64(deserializer);
+    var var_rawZ = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_cleanZ = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_psdFreqs = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_rawPsd = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_cleanPsd = sse_decode_list_prim_f_32_strict(deserializer);
+    return RoiTraceDto(
+      roiIndex: var_roiIndex,
+      label: var_label,
+      network: var_network,
+      isIntact: var_isIntact,
+      varianceRemovedPct: var_varianceRemovedPct,
+      rawZ: var_rawZ,
+      cleanZ: var_cleanZ,
+      psdFreqs: var_psdFreqs,
+      rawPsd: var_rawPsd,
+      cleanPsd: var_cleanPsd,
+    );
   }
 
   @protected
@@ -1160,6 +1777,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_pairwise_coupling_dto(
+    PairwiseCouplingDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_pairwise_coupling_dto(self, serializer);
+  }
+
+  @protected
   void sse_encode_denoise_pipeline_summary(
     DenoisePipelineSummary self,
     SseSerializer serializer,
@@ -1176,6 +1802,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.fcMs, serializer);
     sse_encode_f_64(self.totalMs, serializer);
     sse_encode_f_64(self.meanAbsFc, serializer);
+  }
+
+  @protected
+  void sse_encode_dynamics_summary_dto(
+    DynamicsSummaryDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.nIntactRois, serializer);
+    sse_encode_f_64(self.lowHz, serializer);
+    sse_encode_f_64(self.highHz, serializer);
+    sse_encode_u_32(self.windowLen, serializer);
+    sse_encode_u_32(self.step, serializer);
+    sse_encode_f_64(self.acw0Mean, serializer);
+    sse_encode_f_64(self.acw50Mean, serializer);
+    sse_encode_f_64(self.aucRectMean, serializer);
+    sse_encode_f_64(self.aucTrapMean, serializer);
+    sse_encode_f_64(self.lzcMean, serializer);
+    sse_encode_f_64(self.sampenMean, serializer);
+    sse_encode_f_64(self.medFMean, serializer);
+    sse_encode_f_64(self.seMean, serializer);
+    sse_encode_f_64(self.pleMean, serializer);
+    sse_encode_list_network_dynamics_dto(self.networks, serializer);
+    sse_encode_opt_String(self.exportedCsvPath, serializer);
   }
 
   @protected
@@ -1231,6 +1881,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.carpetWidth, serializer);
     sse_encode_u_32(self.carpetHeight, serializer);
     sse_encode_opt_String(self.exportedDir, serializer);
+    sse_encode_list_prim_f_32_strict(self.rawFcHist, serializer);
+    sse_encode_list_prim_f_32_strict(self.cleanFcHist, serializer);
+    sse_encode_f_64(self.rawFcMean, serializer);
+    sse_encode_f_64(self.rawFcSd, serializer);
+    sse_encode_f_64(self.cleanFcMean, serializer);
+    sse_encode_f_64(self.cleanFcSd, serializer);
+    sse_encode_f_64(self.meanFdMm, serializer);
+    sse_encode_f_64(self.pctScrubbed, serializer);
+    sse_encode_list_prim_f_32_strict(self.fdTrace, serializer);
+    sse_encode_list_prim_u_32_strict(self.scrubbedIndices, serializer);
+    sse_encode_list_prim_u_8_strict(self.rawCarpetRgba, serializer);
+    sse_encode_list_String(self.roiLabels, serializer);
+    sse_encode_list_String(self.networkNames, serializer);
+    sse_encode_list_prim_u_32_strict(self.roiNetworkIndices, serializer);
+    sse_encode_f_64(self.meanAbsPartialFc, serializer);
+    sse_encode_f_64(self.meanGcmiBits, serializer);
+    sse_encode_f_64(self.meanTeBits, serializer);
+    sse_encode_list_prim_u_8_strict(self.partialPreviewRgba, serializer);
+    sse_encode_list_prim_u_8_strict(self.gcmiPreviewRgba, serializer);
+    sse_encode_list_prim_u_8_strict(self.tePreviewRgba, serializer);
+    sse_encode_list_prim_f_32_strict(self.netPearsonFlat, serializer);
+    sse_encode_list_prim_f_32_strict(self.netPartialFlat, serializer);
+    sse_encode_list_prim_f_32_strict(self.netGcmiFlat, serializer);
+    sse_encode_list_prim_f_32_strict(self.netTeFlat, serializer);
   }
 
   @protected
@@ -1247,6 +1921,27 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_String(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_network_dynamics_dto(
+    List<NetworkDynamicsDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_network_dynamics_dto(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_prim_f_32_strict(
     Float32List self,
     SseSerializer serializer,
@@ -1254,6 +1949,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putFloat32List(self);
+  }
+
+  @protected
+  void sse_encode_list_prim_u_32_loose(
+    List<int> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    serializer.buffer.putUint32List(
+      self is Uint32List ? self : Uint32List.fromList(self),
+    );
   }
 
   @protected
@@ -1277,6 +1984,54 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_roi_hub_dto(
+    List<RoiHubDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_roi_hub_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_roi_trace_dto(
+    List<RoiTraceDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_roi_trace_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_network_dynamics_dto(
+    NetworkDynamicsDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.networkName, serializer);
+    sse_encode_u_32(self.nIntactRois, serializer);
+    sse_encode_f_64(self.acw0Mean, serializer);
+    sse_encode_f_64(self.acw0Sd, serializer);
+    sse_encode_f_64(self.acw50Mean, serializer);
+    sse_encode_f_64(self.acw50Sd, serializer);
+    sse_encode_f_64(self.aucRectMean, serializer);
+    sse_encode_f_64(self.aucTrapMean, serializer);
+    sse_encode_f_64(self.lzcMean, serializer);
+    sse_encode_f_64(self.lzcSd, serializer);
+    sse_encode_f_64(self.sampenMean, serializer);
+    sse_encode_f_64(self.sampenSd, serializer);
+    sse_encode_f_64(self.medFMean, serializer);
+    sse_encode_f_64(self.seMean, serializer);
+    sse_encode_f_64(self.pleMean, serializer);
+    sse_encode_f_64(self.pleSd, serializer);
+  }
+
+  @protected
   void sse_encode_nifti_header_summary(
     NiftiHeaderSummary self,
     SseSerializer serializer,
@@ -1297,6 +2052,73 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     if (self != null) {
       sse_encode_String(self, serializer);
     }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_pairwise_coupling_dto(
+    PairwiseCouplingDto? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_pairwise_coupling_dto(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_pairwise_coupling_dto(
+    PairwiseCouplingDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.roiA, serializer);
+    sse_encode_u_32(self.roiB, serializer);
+    sse_encode_String(self.labelA, serializer);
+    sse_encode_String(self.labelB, serializer);
+    sse_encode_f_64(self.pearsonR, serializer);
+    sse_encode_f_64(self.partialR, serializer);
+    sse_encode_f_64(self.gcmiBits, serializer);
+    sse_encode_f_64(self.teAToB, serializer);
+    sse_encode_f_64(self.teBToA, serializer);
+  }
+
+  @protected
+  void sse_encode_roi_hub_dto(RoiHubDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.roiIndex, serializer);
+    sse_encode_String(self.label, serializer);
+    sse_encode_String(self.network, serializer);
+    sse_encode_f_64(self.score, serializer);
+  }
+
+  @protected
+  void sse_encode_roi_timeseries_detail_dto(
+    RoiTimeseriesDetailDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self.trSec, serializer);
+    sse_encode_list_prim_f_32_strict(self.fdTrace, serializer);
+    sse_encode_list_prim_u_32_strict(self.scrubbedIndices, serializer);
+    sse_encode_list_roi_trace_dto(self.traces, serializer);
+    sse_encode_opt_box_autoadd_pairwise_coupling_dto(self.pairwise, serializer);
+  }
+
+  @protected
+  void sse_encode_roi_trace_dto(RoiTraceDto self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.roiIndex, serializer);
+    sse_encode_String(self.label, serializer);
+    sse_encode_String(self.network, serializer);
+    sse_encode_bool(self.isIntact, serializer);
+    sse_encode_f_64(self.varianceRemovedPct, serializer);
+    sse_encode_list_prim_f_32_strict(self.rawZ, serializer);
+    sse_encode_list_prim_f_32_strict(self.cleanZ, serializer);
+    sse_encode_list_prim_f_32_strict(self.psdFreqs, serializer);
+    sse_encode_list_prim_f_32_strict(self.rawPsd, serializer);
+    sse_encode_list_prim_f_32_strict(self.cleanPsd, serializer);
   }
 
   @protected

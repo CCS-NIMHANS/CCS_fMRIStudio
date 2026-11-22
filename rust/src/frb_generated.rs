@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1668885918;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 575895238;
 
 // Section: executor
 
@@ -82,6 +82,51 @@ fn wire__crate__api__auto_segment_lesion_asymmetry_impl(
                             api_flair_path,
                             api_z_threshold,
                             api_out_mask_path,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__compute_cached_dynamics_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "compute_cached_dynamics",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_window_len = <u32>::sse_decode(&mut deserializer);
+            let api_step = <u32>::sse_decode(&mut deserializer);
+            let api_low_hz = <f64>::sse_decode(&mut deserializer);
+            let api_high_hz = <f64>::sse_decode(&mut deserializer);
+            let api_out_dir = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::compute_cached_dynamics(
+                            api_window_len,
+                            api_step,
+                            api_low_hz,
+                            api_high_hz,
+                            api_out_dir,
                         )?;
                         std::result::Result::Ok(output_ok)
                     })(),
@@ -220,6 +265,77 @@ fn wire__crate__api__engine_info_impl(
                     let output_ok = Ok::<_, ()>(crate::api::engine_info())?;
                     std::result::Result::Ok(output_ok)
                 })())
+            }
+        },
+    )
+}
+fn wire__crate__api__get_roi_timeseries_detail_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_roi_timeseries_detail",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_roi_indices = <Vec<u32>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::get_roi_timeseries_detail(api_roi_indices)?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__get_top_hubs_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_top_hubs",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_metric = <String>::sse_decode(&mut deserializer);
+            let api_top_k = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::get_top_hubs(api_metric, api_top_k)?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
             }
         },
     )
@@ -562,6 +678,46 @@ impl SseDecode for crate::api::DenoisePipelineSummary {
     }
 }
 
+impl SseDecode for crate::api::DynamicsSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_nIntactRois = <u32>::sse_decode(deserializer);
+        let mut var_lowHz = <f64>::sse_decode(deserializer);
+        let mut var_highHz = <f64>::sse_decode(deserializer);
+        let mut var_windowLen = <u32>::sse_decode(deserializer);
+        let mut var_step = <u32>::sse_decode(deserializer);
+        let mut var_acw0Mean = <f64>::sse_decode(deserializer);
+        let mut var_acw50Mean = <f64>::sse_decode(deserializer);
+        let mut var_aucRectMean = <f64>::sse_decode(deserializer);
+        let mut var_aucTrapMean = <f64>::sse_decode(deserializer);
+        let mut var_lzcMean = <f64>::sse_decode(deserializer);
+        let mut var_sampenMean = <f64>::sse_decode(deserializer);
+        let mut var_medFMean = <f64>::sse_decode(deserializer);
+        let mut var_seMean = <f64>::sse_decode(deserializer);
+        let mut var_pleMean = <f64>::sse_decode(deserializer);
+        let mut var_networks = <Vec<crate::api::NetworkDynamicsDto>>::sse_decode(deserializer);
+        let mut var_exportedCsvPath = <Option<String>>::sse_decode(deserializer);
+        return crate::api::DynamicsSummaryDto {
+            n_intact_rois: var_nIntactRois,
+            low_hz: var_lowHz,
+            high_hz: var_highHz,
+            window_len: var_windowLen,
+            step: var_step,
+            acw0_mean: var_acw0Mean,
+            acw50_mean: var_acw50Mean,
+            auc_rect_mean: var_aucRectMean,
+            auc_trap_mean: var_aucTrapMean,
+            lzc_mean: var_lzcMean,
+            sampen_mean: var_sampenMean,
+            med_f_mean: var_medFMean,
+            se_mean: var_seMean,
+            ple_mean: var_pleMean,
+            networks: var_networks,
+            exported_csv_path: var_exportedCsvPath,
+        };
+    }
+}
+
 impl SseDecode for crate::api::EngineInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -621,6 +777,30 @@ impl SseDecode for crate::api::LesionPipelineSummary {
         let mut var_carpetWidth = <u32>::sse_decode(deserializer);
         let mut var_carpetHeight = <u32>::sse_decode(deserializer);
         let mut var_exportedDir = <Option<String>>::sse_decode(deserializer);
+        let mut var_rawFcHist = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_cleanFcHist = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_rawFcMean = <f64>::sse_decode(deserializer);
+        let mut var_rawFcSd = <f64>::sse_decode(deserializer);
+        let mut var_cleanFcMean = <f64>::sse_decode(deserializer);
+        let mut var_cleanFcSd = <f64>::sse_decode(deserializer);
+        let mut var_meanFdMm = <f64>::sse_decode(deserializer);
+        let mut var_pctScrubbed = <f64>::sse_decode(deserializer);
+        let mut var_fdTrace = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_scrubbedIndices = <Vec<u32>>::sse_decode(deserializer);
+        let mut var_rawCarpetRgba = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_roiLabels = <Vec<String>>::sse_decode(deserializer);
+        let mut var_networkNames = <Vec<String>>::sse_decode(deserializer);
+        let mut var_roiNetworkIndices = <Vec<u32>>::sse_decode(deserializer);
+        let mut var_meanAbsPartialFc = <f64>::sse_decode(deserializer);
+        let mut var_meanGcmiBits = <f64>::sse_decode(deserializer);
+        let mut var_meanTeBits = <f64>::sse_decode(deserializer);
+        let mut var_partialPreviewRgba = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_gcmiPreviewRgba = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_tePreviewRgba = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_netPearsonFlat = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_netPartialFlat = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_netGcmiFlat = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_netTeFlat = <Vec<f32>>::sse_decode(deserializer);
         return crate::api::LesionPipelineSummary {
             n_timepoints: var_nTimepoints,
             n_rois: var_nRois,
@@ -643,6 +823,30 @@ impl SseDecode for crate::api::LesionPipelineSummary {
             carpet_width: var_carpetWidth,
             carpet_height: var_carpetHeight,
             exported_dir: var_exportedDir,
+            raw_fc_hist: var_rawFcHist,
+            clean_fc_hist: var_cleanFcHist,
+            raw_fc_mean: var_rawFcMean,
+            raw_fc_sd: var_rawFcSd,
+            clean_fc_mean: var_cleanFcMean,
+            clean_fc_sd: var_cleanFcSd,
+            mean_fd_mm: var_meanFdMm,
+            pct_scrubbed: var_pctScrubbed,
+            fd_trace: var_fdTrace,
+            scrubbed_indices: var_scrubbedIndices,
+            raw_carpet_rgba: var_rawCarpetRgba,
+            roi_labels: var_roiLabels,
+            network_names: var_networkNames,
+            roi_network_indices: var_roiNetworkIndices,
+            mean_abs_partial_fc: var_meanAbsPartialFc,
+            mean_gcmi_bits: var_meanGcmiBits,
+            mean_te_bits: var_meanTeBits,
+            partial_preview_rgba: var_partialPreviewRgba,
+            gcmi_preview_rgba: var_gcmiPreviewRgba,
+            te_preview_rgba: var_tePreviewRgba,
+            net_pearson_flat: var_netPearsonFlat,
+            net_partial_flat: var_netPartialFlat,
+            net_gcmi_flat: var_netGcmiFlat,
+            net_te_flat: var_netTeFlat,
         };
     }
 }
@@ -662,6 +866,30 @@ impl SseDecode for crate::api::LesionSummaryDto {
             right_voxels: var_rightVoxels,
             dominant_hemisphere: var_dominantHemisphere,
         };
+    }
+}
+
+impl SseDecode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<String>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::NetworkDynamicsDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::NetworkDynamicsDto>::sse_decode(deserializer));
+        }
+        return ans_;
     }
 }
 
@@ -701,6 +929,70 @@ impl SseDecode for Vec<u8> {
     }
 }
 
+impl SseDecode for Vec<crate::api::RoiHubDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::RoiHubDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::RoiTraceDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::RoiTraceDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for crate::api::NetworkDynamicsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_networkName = <String>::sse_decode(deserializer);
+        let mut var_nIntactRois = <u32>::sse_decode(deserializer);
+        let mut var_acw0Mean = <f64>::sse_decode(deserializer);
+        let mut var_acw0Sd = <f64>::sse_decode(deserializer);
+        let mut var_acw50Mean = <f64>::sse_decode(deserializer);
+        let mut var_acw50Sd = <f64>::sse_decode(deserializer);
+        let mut var_aucRectMean = <f64>::sse_decode(deserializer);
+        let mut var_aucTrapMean = <f64>::sse_decode(deserializer);
+        let mut var_lzcMean = <f64>::sse_decode(deserializer);
+        let mut var_lzcSd = <f64>::sse_decode(deserializer);
+        let mut var_sampenMean = <f64>::sse_decode(deserializer);
+        let mut var_sampenSd = <f64>::sse_decode(deserializer);
+        let mut var_medFMean = <f64>::sse_decode(deserializer);
+        let mut var_seMean = <f64>::sse_decode(deserializer);
+        let mut var_pleMean = <f64>::sse_decode(deserializer);
+        let mut var_pleSd = <f64>::sse_decode(deserializer);
+        return crate::api::NetworkDynamicsDto {
+            network_name: var_networkName,
+            n_intact_rois: var_nIntactRois,
+            acw0_mean: var_acw0Mean,
+            acw0_sd: var_acw0Sd,
+            acw50_mean: var_acw50Mean,
+            acw50_sd: var_acw50Sd,
+            auc_rect_mean: var_aucRectMean,
+            auc_trap_mean: var_aucTrapMean,
+            lzc_mean: var_lzcMean,
+            lzc_sd: var_lzcSd,
+            sampen_mean: var_sampenMean,
+            sampen_sd: var_sampenSd,
+            med_f_mean: var_medFMean,
+            se_mean: var_seMean,
+            ple_mean: var_pleMean,
+            ple_sd: var_pleSd,
+        };
+    }
+}
+
 impl SseDecode for crate::api::NiftiHeaderSummary {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -727,6 +1019,105 @@ impl SseDecode for Option<String> {
         } else {
             return None;
         }
+    }
+}
+
+impl SseDecode for Option<crate::api::PairwiseCouplingDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::PairwiseCouplingDto>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for crate::api::PairwiseCouplingDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_roiA = <u32>::sse_decode(deserializer);
+        let mut var_roiB = <u32>::sse_decode(deserializer);
+        let mut var_labelA = <String>::sse_decode(deserializer);
+        let mut var_labelB = <String>::sse_decode(deserializer);
+        let mut var_pearsonR = <f64>::sse_decode(deserializer);
+        let mut var_partialR = <f64>::sse_decode(deserializer);
+        let mut var_gcmiBits = <f64>::sse_decode(deserializer);
+        let mut var_teAToB = <f64>::sse_decode(deserializer);
+        let mut var_teBToA = <f64>::sse_decode(deserializer);
+        return crate::api::PairwiseCouplingDto {
+            roi_a: var_roiA,
+            roi_b: var_roiB,
+            label_a: var_labelA,
+            label_b: var_labelB,
+            pearson_r: var_pearsonR,
+            partial_r: var_partialR,
+            gcmi_bits: var_gcmiBits,
+            te_a_to_b: var_teAToB,
+            te_b_to_a: var_teBToA,
+        };
+    }
+}
+
+impl SseDecode for crate::api::RoiHubDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_roiIndex = <u32>::sse_decode(deserializer);
+        let mut var_label = <String>::sse_decode(deserializer);
+        let mut var_network = <String>::sse_decode(deserializer);
+        let mut var_score = <f64>::sse_decode(deserializer);
+        return crate::api::RoiHubDto {
+            roi_index: var_roiIndex,
+            label: var_label,
+            network: var_network,
+            score: var_score,
+        };
+    }
+}
+
+impl SseDecode for crate::api::RoiTimeseriesDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_trSec = <f64>::sse_decode(deserializer);
+        let mut var_fdTrace = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_scrubbedIndices = <Vec<u32>>::sse_decode(deserializer);
+        let mut var_traces = <Vec<crate::api::RoiTraceDto>>::sse_decode(deserializer);
+        let mut var_pairwise = <Option<crate::api::PairwiseCouplingDto>>::sse_decode(deserializer);
+        return crate::api::RoiTimeseriesDetailDto {
+            tr_sec: var_trSec,
+            fd_trace: var_fdTrace,
+            scrubbed_indices: var_scrubbedIndices,
+            traces: var_traces,
+            pairwise: var_pairwise,
+        };
+    }
+}
+
+impl SseDecode for crate::api::RoiTraceDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_roiIndex = <u32>::sse_decode(deserializer);
+        let mut var_label = <String>::sse_decode(deserializer);
+        let mut var_network = <String>::sse_decode(deserializer);
+        let mut var_isIntact = <bool>::sse_decode(deserializer);
+        let mut var_varianceRemovedPct = <f64>::sse_decode(deserializer);
+        let mut var_rawZ = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_cleanZ = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_psdFreqs = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_rawPsd = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_cleanPsd = <Vec<f32>>::sse_decode(deserializer);
+        return crate::api::RoiTraceDto {
+            roi_index: var_roiIndex,
+            label: var_label,
+            network: var_network,
+            is_intact: var_isIntact,
+            variance_removed_pct: var_varianceRemovedPct,
+            raw_z: var_rawZ,
+            clean_z: var_cleanZ,
+            psd_freqs: var_psdFreqs,
+            raw_psd: var_rawPsd,
+            clean_psd: var_cleanPsd,
+        };
     }
 }
 
@@ -800,17 +1191,20 @@ fn pde_ffi_dispatcher_primary_impl(
         1 => {
             wire__crate__api__auto_segment_lesion_asymmetry_impl(port, ptr, rust_vec_len, data_len)
         }
-        2 => wire__crate__api__edit_lesion_mask_brush_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__edit_lesion_mask_magic_wand_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__engine_info_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__inspect_nifti_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__morphology_lesion_mask_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__render_slice_rgba_impl(port, ptr, rust_vec_len, data_len),
-        8 => {
+        2 => wire__crate__api__compute_cached_dynamics_impl(port, ptr, rust_vec_len, data_len),
+        3 => wire__crate__api__edit_lesion_mask_brush_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__edit_lesion_mask_magic_wand_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__engine_info_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__get_roi_timeseries_detail_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__get_top_hubs_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__inspect_nifti_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__morphology_lesion_mask_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__render_slice_rgba_impl(port, ptr, rust_vec_len, data_len),
+        11 => {
             wire__crate__api__render_slice_with_lesion_rgba_impl(port, ptr, rust_vec_len, data_len)
         }
-        9 => wire__crate__api__run_lesion_aware_pipeline_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__run_roi_denoise_pipeline_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__run_lesion_aware_pipeline_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__run_roi_denoise_pipeline_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -860,6 +1254,41 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::DenoisePipelineSummary>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::DynamicsSummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.n_intact_rois.into_into_dart().into_dart(),
+            self.low_hz.into_into_dart().into_dart(),
+            self.high_hz.into_into_dart().into_dart(),
+            self.window_len.into_into_dart().into_dart(),
+            self.step.into_into_dart().into_dart(),
+            self.acw0_mean.into_into_dart().into_dart(),
+            self.acw50_mean.into_into_dart().into_dart(),
+            self.auc_rect_mean.into_into_dart().into_dart(),
+            self.auc_trap_mean.into_into_dart().into_dart(),
+            self.lzc_mean.into_into_dart().into_dart(),
+            self.sampen_mean.into_into_dart().into_dart(),
+            self.med_f_mean.into_into_dart().into_dart(),
+            self.se_mean.into_into_dart().into_dart(),
+            self.ple_mean.into_into_dart().into_dart(),
+            self.networks.into_into_dart().into_dart(),
+            self.exported_csv_path.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::DynamicsSummaryDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::DynamicsSummaryDto>
+    for crate::api::DynamicsSummaryDto
+{
+    fn into_into_dart(self) -> crate::api::DynamicsSummaryDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::EngineInfo {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -901,6 +1330,30 @@ impl flutter_rust_bridge::IntoDart for crate::api::LesionPipelineSummary {
             self.carpet_width.into_into_dart().into_dart(),
             self.carpet_height.into_into_dart().into_dart(),
             self.exported_dir.into_into_dart().into_dart(),
+            self.raw_fc_hist.into_into_dart().into_dart(),
+            self.clean_fc_hist.into_into_dart().into_dart(),
+            self.raw_fc_mean.into_into_dart().into_dart(),
+            self.raw_fc_sd.into_into_dart().into_dart(),
+            self.clean_fc_mean.into_into_dart().into_dart(),
+            self.clean_fc_sd.into_into_dart().into_dart(),
+            self.mean_fd_mm.into_into_dart().into_dart(),
+            self.pct_scrubbed.into_into_dart().into_dart(),
+            self.fd_trace.into_into_dart().into_dart(),
+            self.scrubbed_indices.into_into_dart().into_dart(),
+            self.raw_carpet_rgba.into_into_dart().into_dart(),
+            self.roi_labels.into_into_dart().into_dart(),
+            self.network_names.into_into_dart().into_dart(),
+            self.roi_network_indices.into_into_dart().into_dart(),
+            self.mean_abs_partial_fc.into_into_dart().into_dart(),
+            self.mean_gcmi_bits.into_into_dart().into_dart(),
+            self.mean_te_bits.into_into_dart().into_dart(),
+            self.partial_preview_rgba.into_into_dart().into_dart(),
+            self.gcmi_preview_rgba.into_into_dart().into_dart(),
+            self.te_preview_rgba.into_into_dart().into_dart(),
+            self.net_pearson_flat.into_into_dart().into_dart(),
+            self.net_partial_flat.into_into_dart().into_dart(),
+            self.net_gcmi_flat.into_into_dart().into_dart(),
+            self.net_te_flat.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -938,6 +1391,41 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::LesionSummaryDto>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::NetworkDynamicsDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.network_name.into_into_dart().into_dart(),
+            self.n_intact_rois.into_into_dart().into_dart(),
+            self.acw0_mean.into_into_dart().into_dart(),
+            self.acw0_sd.into_into_dart().into_dart(),
+            self.acw50_mean.into_into_dart().into_dart(),
+            self.acw50_sd.into_into_dart().into_dart(),
+            self.auc_rect_mean.into_into_dart().into_dart(),
+            self.auc_trap_mean.into_into_dart().into_dart(),
+            self.lzc_mean.into_into_dart().into_dart(),
+            self.lzc_sd.into_into_dart().into_dart(),
+            self.sampen_mean.into_into_dart().into_dart(),
+            self.sampen_sd.into_into_dart().into_dart(),
+            self.med_f_mean.into_into_dart().into_dart(),
+            self.se_mean.into_into_dart().into_dart(),
+            self.ple_mean.into_into_dart().into_dart(),
+            self.ple_sd.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::NetworkDynamicsDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::NetworkDynamicsDto>
+    for crate::api::NetworkDynamicsDto
+{
+    fn into_into_dart(self) -> crate::api::NetworkDynamicsDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::NiftiHeaderSummary {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -958,6 +1446,100 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::NiftiHeaderSummary>
     for crate::api::NiftiHeaderSummary
 {
     fn into_into_dart(self) -> crate::api::NiftiHeaderSummary {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::PairwiseCouplingDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.roi_a.into_into_dart().into_dart(),
+            self.roi_b.into_into_dart().into_dart(),
+            self.label_a.into_into_dart().into_dart(),
+            self.label_b.into_into_dart().into_dart(),
+            self.pearson_r.into_into_dart().into_dart(),
+            self.partial_r.into_into_dart().into_dart(),
+            self.gcmi_bits.into_into_dart().into_dart(),
+            self.te_a_to_b.into_into_dart().into_dart(),
+            self.te_b_to_a.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::PairwiseCouplingDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::PairwiseCouplingDto>
+    for crate::api::PairwiseCouplingDto
+{
+    fn into_into_dart(self) -> crate::api::PairwiseCouplingDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::RoiHubDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.roi_index.into_into_dart().into_dart(),
+            self.label.into_into_dart().into_dart(),
+            self.network.into_into_dart().into_dart(),
+            self.score.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::RoiHubDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::RoiHubDto> for crate::api::RoiHubDto {
+    fn into_into_dart(self) -> crate::api::RoiHubDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::RoiTimeseriesDetailDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.tr_sec.into_into_dart().into_dart(),
+            self.fd_trace.into_into_dart().into_dart(),
+            self.scrubbed_indices.into_into_dart().into_dart(),
+            self.traces.into_into_dart().into_dart(),
+            self.pairwise.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::RoiTimeseriesDetailDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::RoiTimeseriesDetailDto>
+    for crate::api::RoiTimeseriesDetailDto
+{
+    fn into_into_dart(self) -> crate::api::RoiTimeseriesDetailDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::RoiTraceDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.roi_index.into_into_dart().into_dart(),
+            self.label.into_into_dart().into_dart(),
+            self.network.into_into_dart().into_dart(),
+            self.is_intact.into_into_dart().into_dart(),
+            self.variance_removed_pct.into_into_dart().into_dart(),
+            self.raw_z.into_into_dart().into_dart(),
+            self.clean_z.into_into_dart().into_dart(),
+            self.psd_freqs.into_into_dart().into_dart(),
+            self.raw_psd.into_into_dart().into_dart(),
+            self.clean_psd.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::RoiTraceDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::RoiTraceDto> for crate::api::RoiTraceDto {
+    fn into_into_dart(self) -> crate::api::RoiTraceDto {
         self
     }
 }
@@ -1019,6 +1601,28 @@ impl SseEncode for crate::api::DenoisePipelineSummary {
     }
 }
 
+impl SseEncode for crate::api::DynamicsSummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.n_intact_rois, serializer);
+        <f64>::sse_encode(self.low_hz, serializer);
+        <f64>::sse_encode(self.high_hz, serializer);
+        <u32>::sse_encode(self.window_len, serializer);
+        <u32>::sse_encode(self.step, serializer);
+        <f64>::sse_encode(self.acw0_mean, serializer);
+        <f64>::sse_encode(self.acw50_mean, serializer);
+        <f64>::sse_encode(self.auc_rect_mean, serializer);
+        <f64>::sse_encode(self.auc_trap_mean, serializer);
+        <f64>::sse_encode(self.lzc_mean, serializer);
+        <f64>::sse_encode(self.sampen_mean, serializer);
+        <f64>::sse_encode(self.med_f_mean, serializer);
+        <f64>::sse_encode(self.se_mean, serializer);
+        <f64>::sse_encode(self.ple_mean, serializer);
+        <Vec<crate::api::NetworkDynamicsDto>>::sse_encode(self.networks, serializer);
+        <Option<String>>::sse_encode(self.exported_csv_path, serializer);
+    }
+}
+
 impl SseEncode for crate::api::EngineInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1073,6 +1677,30 @@ impl SseEncode for crate::api::LesionPipelineSummary {
         <u32>::sse_encode(self.carpet_width, serializer);
         <u32>::sse_encode(self.carpet_height, serializer);
         <Option<String>>::sse_encode(self.exported_dir, serializer);
+        <Vec<f32>>::sse_encode(self.raw_fc_hist, serializer);
+        <Vec<f32>>::sse_encode(self.clean_fc_hist, serializer);
+        <f64>::sse_encode(self.raw_fc_mean, serializer);
+        <f64>::sse_encode(self.raw_fc_sd, serializer);
+        <f64>::sse_encode(self.clean_fc_mean, serializer);
+        <f64>::sse_encode(self.clean_fc_sd, serializer);
+        <f64>::sse_encode(self.mean_fd_mm, serializer);
+        <f64>::sse_encode(self.pct_scrubbed, serializer);
+        <Vec<f32>>::sse_encode(self.fd_trace, serializer);
+        <Vec<u32>>::sse_encode(self.scrubbed_indices, serializer);
+        <Vec<u8>>::sse_encode(self.raw_carpet_rgba, serializer);
+        <Vec<String>>::sse_encode(self.roi_labels, serializer);
+        <Vec<String>>::sse_encode(self.network_names, serializer);
+        <Vec<u32>>::sse_encode(self.roi_network_indices, serializer);
+        <f64>::sse_encode(self.mean_abs_partial_fc, serializer);
+        <f64>::sse_encode(self.mean_gcmi_bits, serializer);
+        <f64>::sse_encode(self.mean_te_bits, serializer);
+        <Vec<u8>>::sse_encode(self.partial_preview_rgba, serializer);
+        <Vec<u8>>::sse_encode(self.gcmi_preview_rgba, serializer);
+        <Vec<u8>>::sse_encode(self.te_preview_rgba, serializer);
+        <Vec<f32>>::sse_encode(self.net_pearson_flat, serializer);
+        <Vec<f32>>::sse_encode(self.net_partial_flat, serializer);
+        <Vec<f32>>::sse_encode(self.net_gcmi_flat, serializer);
+        <Vec<f32>>::sse_encode(self.net_te_flat, serializer);
     }
 }
 
@@ -1084,6 +1712,26 @@ impl SseEncode for crate::api::LesionSummaryDto {
         <u64>::sse_encode(self.left_voxels, serializer);
         <u64>::sse_encode(self.right_voxels, serializer);
         <String>::sse_encode(self.dominant_hemisphere, serializer);
+    }
+}
+
+impl SseEncode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <String>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::NetworkDynamicsDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::NetworkDynamicsDto>::sse_encode(item, serializer);
+        }
     }
 }
 
@@ -1117,6 +1765,48 @@ impl SseEncode for Vec<u8> {
     }
 }
 
+impl SseEncode for Vec<crate::api::RoiHubDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::RoiHubDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::RoiTraceDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::RoiTraceDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::api::NetworkDynamicsDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.network_name, serializer);
+        <u32>::sse_encode(self.n_intact_rois, serializer);
+        <f64>::sse_encode(self.acw0_mean, serializer);
+        <f64>::sse_encode(self.acw0_sd, serializer);
+        <f64>::sse_encode(self.acw50_mean, serializer);
+        <f64>::sse_encode(self.acw50_sd, serializer);
+        <f64>::sse_encode(self.auc_rect_mean, serializer);
+        <f64>::sse_encode(self.auc_trap_mean, serializer);
+        <f64>::sse_encode(self.lzc_mean, serializer);
+        <f64>::sse_encode(self.lzc_sd, serializer);
+        <f64>::sse_encode(self.sampen_mean, serializer);
+        <f64>::sse_encode(self.sampen_sd, serializer);
+        <f64>::sse_encode(self.med_f_mean, serializer);
+        <f64>::sse_encode(self.se_mean, serializer);
+        <f64>::sse_encode(self.ple_mean, serializer);
+        <f64>::sse_encode(self.ple_sd, serializer);
+    }
+}
+
 impl SseEncode for crate::api::NiftiHeaderSummary {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1135,6 +1825,68 @@ impl SseEncode for Option<String> {
         if let Some(value) = self {
             <String>::sse_encode(value, serializer);
         }
+    }
+}
+
+impl SseEncode for Option<crate::api::PairwiseCouplingDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::PairwiseCouplingDto>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for crate::api::PairwiseCouplingDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.roi_a, serializer);
+        <u32>::sse_encode(self.roi_b, serializer);
+        <String>::sse_encode(self.label_a, serializer);
+        <String>::sse_encode(self.label_b, serializer);
+        <f64>::sse_encode(self.pearson_r, serializer);
+        <f64>::sse_encode(self.partial_r, serializer);
+        <f64>::sse_encode(self.gcmi_bits, serializer);
+        <f64>::sse_encode(self.te_a_to_b, serializer);
+        <f64>::sse_encode(self.te_b_to_a, serializer);
+    }
+}
+
+impl SseEncode for crate::api::RoiHubDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.roi_index, serializer);
+        <String>::sse_encode(self.label, serializer);
+        <String>::sse_encode(self.network, serializer);
+        <f64>::sse_encode(self.score, serializer);
+    }
+}
+
+impl SseEncode for crate::api::RoiTimeseriesDetailDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f64>::sse_encode(self.tr_sec, serializer);
+        <Vec<f32>>::sse_encode(self.fd_trace, serializer);
+        <Vec<u32>>::sse_encode(self.scrubbed_indices, serializer);
+        <Vec<crate::api::RoiTraceDto>>::sse_encode(self.traces, serializer);
+        <Option<crate::api::PairwiseCouplingDto>>::sse_encode(self.pairwise, serializer);
+    }
+}
+
+impl SseEncode for crate::api::RoiTraceDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.roi_index, serializer);
+        <String>::sse_encode(self.label, serializer);
+        <String>::sse_encode(self.network, serializer);
+        <bool>::sse_encode(self.is_intact, serializer);
+        <f64>::sse_encode(self.variance_removed_pct, serializer);
+        <Vec<f32>>::sse_encode(self.raw_z, serializer);
+        <Vec<f32>>::sse_encode(self.clean_z, serializer);
+        <Vec<f32>>::sse_encode(self.psd_freqs, serializer);
+        <Vec<f32>>::sse_encode(self.raw_psd, serializer);
+        <Vec<f32>>::sse_encode(self.clean_psd, serializer);
     }
 }
 
