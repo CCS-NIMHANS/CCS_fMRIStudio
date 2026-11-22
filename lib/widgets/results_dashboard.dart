@@ -1,8 +1,17 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:ccs_fmri_studio/src/rust/api.dart' as rust_api;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+
+typedef SidecarModuleRunner = Future<int> Function(
+  String module,
+  List<String> args,
+  void Function(String line) onLog,
+);
 
 class ResultsDashboard extends StatefulWidget {
   const ResultsDashboard({
@@ -15,8 +24,13 @@ class ResultsDashboard extends StatefulWidget {
     required this.partialImage,
     required this.gcmiImage,
     required this.teImage,
+    this.teNetImage,
     required this.rawCarpetImage,
     required this.cleanCarpetImage,
+    this.boldMniPath = '',
+    this.labelsJsonPath = '',
+    this.initialBatchCsvPath = '',
+    this.onRunSidecarModule,
     required this.onGoStep4,
     required this.onOpenResultsFolder,
     required this.onSaveReportAs,
@@ -31,8 +45,13 @@ class ResultsDashboard extends StatefulWidget {
   final ui.Image? partialImage;
   final ui.Image? gcmiImage;
   final ui.Image? teImage;
+  final ui.Image? teNetImage;
   final ui.Image? rawCarpetImage;
   final ui.Image? cleanCarpetImage;
+  final String boldMniPath;
+  final String labelsJsonPath;
+  final String initialBatchCsvPath;
+  final SidecarModuleRunner? onRunSidecarModule;
   final VoidCallback onGoStep4;
   final ValueChanged<String> onOpenResultsFolder;
   final VoidCallback onSaveReportAs;
@@ -62,6 +81,7 @@ class _ResultsDashboardState extends State<ResultsDashboard>
 
   // Tab 3: Connectivity & Connectome
   String _connMetric = 'pearson'; // 'pearson', 'partial', 'gcmi', 'te_out'
+  bool _teNetFlow = true;
   double _edgeDensity = 0.20;
   int? _tappedRow;
   int? _tappedCol;
@@ -77,6 +97,34 @@ class _ResultsDashboardState extends State<ResultsDashboard>
   bool _loadingDynamics = false;
   String? _dynError;
 
+  // Tab 5: Graph Theory (Pure Rust)
+  String _graphMetric = 'pearson';
+  double _graphDensity = 0.15;
+  bool _graphWeighted = true;
+  rust_api.GraphTheorySummaryDto? _graphSummary;
+  bool _loadingGraph = false;
+  String? _graphError;
+
+  // Tab 6: Stats (Nilearn Seed-to-Voxel GLM & Group Connectivity)
+  int _glmRoiIndex = 0;
+  String _glmCorrection = 'fdr';
+  double _glmAlpha = 0.05;
+  int _glmClusterThresh = 10;
+  bool _runningSeedGlm = false;
+  String? _seedGlmError;
+  Map<String, dynamic>? _seedGlmSummary;
+  int _seedGlmRunSeq = 0;
+
+  late final TextEditingController _groupBatchCsvCtrl;
+  late final TextEditingController _groupACtrl;
+  late final TextEditingController _groupBCtrl;
+  bool _groupPaired = false;
+  int _groupNPerm = 250;
+  bool _runningGroupStats = false;
+  String? _groupStatsError;
+  Map<String, dynamic>? _groupStatsSummary;
+  int _groupStatsRunSeq = 0;
+
   static const Map<String, (double, double, String)> _subBands = {
     'full': (0.01, 0.10, 'Full Band (0.01–0.10 Hz)'),
     'slow5a': (0.01, 0.03, 'Slow-5a (0.01–0.03 Hz)'),
@@ -88,10 +136,15 @@ class _ResultsDashboardState extends State<ResultsDashboard>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 5, vsync: this);
+    _groupBatchCsvCtrl = TextEditingController(text: widget.initialBatchCsvPath);
+    _groupACtrl = TextEditingController(text: 'pre');
+    _groupBCtrl = TextEditingController(text: 'post');
+    _tabCtrl = TabController(length: 7, vsync: this);
     _tabCtrl.addListener(() {
       if (_tabCtrl.index == 3 && _dynamics == null && !_loadingDynamics) {
         _loadDynamics();
+      } else if (_tabCtrl.index == 4 && _graphSummary == null && !_loadingGraph) {
+        _loadGraphTheory();
       }
     });
     _initDefaults();
@@ -100,8 +153,14 @@ class _ResultsDashboardState extends State<ResultsDashboard>
   @override
   void didUpdateWidget(covariant ResultsDashboard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialBatchCsvPath != widget.initialBatchCsvPath &&
+        widget.initialBatchCsvPath.isNotEmpty) {
+      _groupBatchCsvCtrl.text = widget.initialBatchCsvPath;
+    }
     if (oldWidget.summary != widget.summary) {
       _dynamics = null;
+      _graphSummary = null;
+      _seedGlmSummary = null;
       _roiDetail = null;
       _hubs = [];
       _initDefaults();
@@ -110,6 +169,7 @@ class _ResultsDashboardState extends State<ResultsDashboard>
 
   void _initDefaults() {
     _dynWindowLen = math.min(130, math.max(24, widget.summary.nTimepoints ~/ 2));
+    _glmRoiIndex = 0;
     _selectedRois.clear();
     if (widget.summary.nRois >= 2) {
       _selectedRois.addAll([0, 1]);
@@ -122,6 +182,9 @@ class _ResultsDashboardState extends State<ResultsDashboard>
 
   @override
   void dispose() {
+    _groupBatchCsvCtrl.dispose();
+    _groupACtrl.dispose();
+    _groupBCtrl.dispose();
     _tabCtrl.dispose();
     super.dispose();
   }
@@ -182,6 +245,159 @@ class _ResultsDashboardState extends State<ResultsDashboard>
     }
   }
 
+  Future<void> _loadGraphTheory() async {
+    setState(() {
+      _loadingGraph = true;
+      _graphError = null;
+    });
+    try {
+      final res = await rust_api.computeGraphTheory(
+        metric: _graphMetric,
+        density: _graphDensity,
+        weighted: _graphWeighted,
+        exportDir: widget.summary.exportedDir,
+      );
+      if (!mounted) return;
+      setState(() => _graphSummary = res);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _graphError = e.toString());
+    } finally {
+      if (mounted) setState(() => _loadingGraph = false);
+    }
+  }
+
+  Future<void> _runSeedGlm() async {
+    final runner = widget.onRunSidecarModule;
+    final expDir = widget.summary.exportedDir;
+    if (runner == null || expDir == null || expDir.isEmpty || widget.boldMniPath.isEmpty) {
+      setState(() {
+        _seedGlmError =
+            'Requires denoised results folder and 4D BOLD MNI volume path (loaded in Step 4).';
+      });
+      return;
+    }
+    final tsCsv = '$expDir${Platform.pathSeparator}denoised_timeseries.csv';
+    if (!File(tsCsv).existsSync()) {
+      setState(() => _seedGlmError = 'Missing $tsCsv');
+      return;
+    }
+    final outDir = '$expDir${Platform.pathSeparator}nilearn_stats';
+    final labels = widget.summary.roiLabels;
+    final seedLbl = (_glmRoiIndex >= 0 && _glmRoiIndex < labels.length)
+        ? labels[_glmRoiIndex]
+        : 'ROI_${_glmRoiIndex + 1}';
+
+    setState(() {
+      _runningSeedGlm = true;
+      _seedGlmError = null;
+    });
+    final logs = <String>[];
+    try {
+      final args = <String>[
+        '--mode',
+        'seed-glm',
+        '--bold-mni',
+        widget.boldMniPath,
+        '--denoised-ts-csv',
+        tsCsv,
+        '--roi-index',
+        '$_glmRoiIndex',
+        '--seed-label',
+        seedLbl,
+        '--correction',
+        _glmCorrection,
+        '--alpha',
+        '$_glmAlpha',
+        '--cluster-threshold',
+        '$_glmClusterThresh',
+        '--out-dir',
+        outDir,
+      ];
+      if (widget.labelsJsonPath.isNotEmpty) {
+        args.addAll(['--roi-labels-json', widget.labelsJsonPath]);
+      }
+      final code = await runner('ccs_fmri_sidecar.nilearn_stats', args, logs.add);
+      if (!mounted) return;
+      if (code != 0) {
+        setState(
+          () => _seedGlmError = 'Nilearn GLM exited ($code): ${logs.reversed.take(4).join(' | ')}',
+        );
+        return;
+      }
+      final jsonFile = File('$outDir${Platform.pathSeparator}seed_glm_summary.json');
+      if (jsonFile.existsSync()) {
+        final parsed = jsonDecode(jsonFile.readAsStringSync()) as Map<String, dynamic>;
+        setState(() {
+          _seedGlmSummary = parsed;
+          _seedGlmRunSeq++;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _seedGlmError = e.toString());
+    } finally {
+      if (mounted) setState(() => _runningSeedGlm = false);
+    }
+  }
+
+  Future<void> _runGroupStats() async {
+    final runner = widget.onRunSidecarModule;
+    final batchCsv = _groupBatchCsvCtrl.text.trim();
+    if (runner == null || batchCsv.isEmpty || !File(batchCsv).existsSync()) {
+      setState(() {
+        _groupStatsError =
+            'Select a valid batch_summary.csv produced by the Batch tab (with ≥ 2 subjects per group).';
+      });
+      return;
+    }
+    final outDir =
+        '${File(batchCsv).parent.path}${Platform.pathSeparator}nilearn_stats';
+    setState(() {
+      _runningGroupStats = true;
+      _groupStatsError = null;
+    });
+    final logs = <String>[];
+    try {
+      final args = <String>[
+        '--mode',
+        'group',
+        '--batch-csv',
+        batchCsv,
+        '--group-a',
+        _groupACtrl.text.trim().isEmpty ? 'pre' : _groupACtrl.text.trim(),
+        '--group-b',
+        _groupBCtrl.text.trim().isEmpty ? 'post' : _groupBCtrl.text.trim(),
+        if (_groupPaired) '--paired',
+        '--n-perm',
+        '$_groupNPerm',
+        '--out-dir',
+        outDir,
+      ];
+      final code = await runner('ccs_fmri_sidecar.nilearn_stats', args, logs.add);
+      if (!mounted) return;
+      if (code != 0) {
+        setState(
+          () => _groupStatsError =
+              'Group Stats exited ($code): ${logs.reversed.take(4).join(' | ')}',
+        );
+        return;
+      }
+      final jsonFile =
+          File('$outDir${Platform.pathSeparator}nilearn_group_stats.json');
+      if (jsonFile.existsSync()) {
+        final parsed = jsonDecode(jsonFile.readAsStringSync()) as Map<String, dynamic>;
+        setState(() {
+          _groupStatsSummary = parsed;
+          _groupStatsRunSeq++;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _groupStatsError = e.toString());
+    } finally {
+      if (mounted) setState(() => _runningGroupStats = false);
+    }
+  }
+
   static Color _networkColor(String net) {
     final lower = net.toLowerCase();
     if (lower.contains('vis')) return const Color(0xFF8B5CF6);
@@ -212,6 +428,8 @@ class _ResultsDashboardState extends State<ResultsDashboard>
               Tab(icon: Icon(Icons.show_chart, size: 18), text: 'ROI Timeseries'),
               Tab(icon: Icon(Icons.hub, size: 18), text: 'Connectivity & Connectome'),
               Tab(icon: Icon(Icons.waves, size: 18), text: 'Timeseries Dynamics'),
+              Tab(icon: Icon(Icons.account_tree, size: 18), text: 'Graph Theory'),
+              Tab(icon: Icon(Icons.science, size: 18), text: 'Stats (Nilearn)'),
               Tab(icon: Icon(Icons.summarize, size: 18), text: 'Summary & Export'),
             ],
           ),
@@ -225,6 +443,8 @@ class _ResultsDashboardState extends State<ResultsDashboard>
               _buildRoiExplorerTab(),
               _buildConnectomeTab(),
               _buildDynamicsTab(),
+              _buildGraphTheoryTab(),
+              _buildNilearnStatsTab(),
               _buildSummaryExportTab(),
             ],
           ),
@@ -268,8 +488,14 @@ class _ResultsDashboardState extends State<ResultsDashboard>
               _kpiBox(
                 'Volumes Scrubbed',
                 '${s.scrubbedIndices.length} (${s.pctScrubbed.toStringAsFixed(1)}%)',
-                'FD > ${widget.fdThresholdMm.toStringAsFixed(2)} mm censored',
+                'FD > ${widget.fdThresholdMm.toStringAsFixed(2)} mm (${s.censorMode})',
                 s.pctScrubbed > 20 ? const Color(0xFFEF4444) : const Color(0xFF10B981),
+              ),
+              _kpiBox(
+                'Effective DOF',
+                '${s.dofRemaining} / ${s.nTimepoints}',
+                '${s.nRegressors} nuisance + DCT regressors',
+                s.dofRemaining < 50 ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
               ),
             ],
           ),
@@ -556,6 +782,7 @@ class _ResultsDashboardState extends State<ResultsDashboard>
                 children: [
                   _card(
                     title: 'Raw vs Clean BOLD Timeseries & Variance Removed',
+                    subtitle: 'Raw BOLD uses robust median/MAD scaling so high-motion spikes do not squash surviving neural oscillations.',
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -724,13 +951,21 @@ class _ResultsDashboardState extends State<ResultsDashboard>
         false,
         false,
       ),
-      'te_out' => (
-        'Transfer Entropy (Directed i → j, bits)',
-        widget.teImage,
-        s.netTeFlat,
-        true,
-        false,
-      ),
+      'te_out' => _teNetFlow
+          ? (
+              'Net Transfer Entropy (TE i→j − TE j→i, bits)',
+              widget.teNetImage ?? widget.teImage,
+              s.netTeAsymFlat.isNotEmpty ? s.netTeAsymFlat : s.netTeFlat,
+              true,
+              true,
+            )
+          : (
+              'Raw Transfer Entropy (Directed i → j, bits)',
+              widget.teImage,
+              s.netTeFlat,
+              true,
+              false,
+            ),
       _ => (
         'Pearson Functional Connectivity (r)',
         widget.fcImage,
@@ -764,6 +999,15 @@ class _ResultsDashboardState extends State<ResultsDashboard>
                   _loadHubs();
                 },
               ),
+              if (_connMetric == 'te_out')
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: true, label: Text('Net Flow (i→j − j→i)')),
+                    ButtonSegment(value: false, label: Text('Raw TE (i→j)')),
+                  ],
+                  selected: {_teNetFlow},
+                  onSelectionChanged: (v) => setState(() => _teNetFlow = v.first),
+                ),
               Wrap(
                 spacing: 8,
                 children: [
@@ -921,6 +1165,7 @@ class _ResultsDashboardState extends State<ResultsDashboard>
                             flatMatrix: netFlat,
                             density: _edgeDensity,
                             directed: isDirected,
+                            netDirectionalOnly: isDirected && _teNetFlow,
                             signed: isSigned,
                             colorForNetwork: _networkColor,
                           ),
@@ -932,6 +1177,24 @@ class _ResultsDashboardState extends State<ResultsDashboard>
               ),
             ],
           ),
+          if (_connMetric == 'te_out' && s.netTeOutMinusIn.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _card(
+              title: 'Net Directed Information Flow (Out-TE − In-TE per Network)',
+              subtitle:
+                  'Gold bars (right, > 0) identify Net Information Senders; cyan bars (left, < 0) identify Net Information Receivers.',
+              child: SizedBox(
+                height: math.max(190.0, s.networkNames.length * 22.0),
+                child: CustomPaint(
+                  painter: _NetTeFlowDivergingPainter(
+                    networks: s.networkNames,
+                    netFlow: s.netTeOutMinusIn,
+                    colorForNetwork: _networkColor,
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           _card(
             title: 'Top-10 Hub ROIs ($matrixTitle)',
@@ -1113,11 +1376,43 @@ class _ResultsDashboardState extends State<ResultsDashboard>
             _card(
               title: 'Yeo-7 Network Dynamics Profile (Mean ± SD Across Intact ROIs)',
               subtitle: d.exportedCsvPath != null
-                  ? 'Exported full per-ROI dynamics table to: ${d.exportedCsvPath}'
-                  : 'Select any metric to compare functional networks.',
+                  ? 'Zoomed Y-axis highlights inter-network variance • Exported to: ${d.exportedCsvPath}'
+                  : 'Zoomed Y-axis highlights inter-network variance across functional networks.',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      Chip(
+                        avatar: const Icon(Icons.analytics_outlined, size: 15, color: Color(0xFF2DD4BF)),
+                        label: Text(
+                          'ANOVA ACW-0: F=${d.anovaFAcw0.toStringAsFixed(2)} (${d.anovaPAcw0 < 0.001 ? "p<0.001" : "p=${d.anovaPAcw0.toStringAsFixed(3)}"})',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                      ),
+                      Chip(
+                        label: Text(
+                          'LZC: F=${d.anovaFLzc.toStringAsFixed(2)} (${d.anovaPLzc < 0.001 ? "p<0.001" : "p=${d.anovaPLzc.toStringAsFixed(3)}"})',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                      ),
+                      Chip(
+                        label: Text(
+                          'SampEn: F=${d.anovaFSampen.toStringAsFixed(2)} (${d.anovaPSampen < 0.001 ? "p<0.001" : "p=${d.anovaPSampen.toStringAsFixed(3)}"})',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                      ),
+                      Chip(
+                        label: Text(
+                          'PLE: F=${d.anovaFPle.toStringAsFixed(2)} (${d.anovaPPle < 0.001 ? "p<0.001" : "p=${d.anovaPPle.toStringAsFixed(3)}"})',
+                          style: const TextStyle(fontSize: 11.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
@@ -1141,7 +1436,7 @@ class _ResultsDashboardState extends State<ResultsDashboard>
                   ),
                   const SizedBox(height: 14),
                   SizedBox(
-                    height: 260,
+                    height: 270,
                     child: CustomPaint(
                       painter: _NetworkDynamicsPainter(
                         networks: d.networks,
@@ -1160,7 +1455,599 @@ class _ResultsDashboardState extends State<ResultsDashboard>
   }
 
   // ===========================================================================
-  // TAB 5: SUMMARY & EXPORT
+  // TAB 5: GRAPH THEORY ANALYTICS (PURE RUST)
+  // ===========================================================================
+  Widget _buildGraphTheoryTab() {
+    final g = _graphSummary;
+    final topNodal = g == null
+        ? const <rust_api.NodalGraphDto>[]
+        : (g.nodal.toList()
+              ..sort((a, b) => b.betweenness.compareTo(a.betweenness)))
+            .take(15)
+            .toList();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _card(
+            title: 'Complex Network & Graph Theory (Rayon Parallel Rust)',
+            subtitle:
+                'Compute NaN-safe weighted or binary topology metrics, Maslov-Sneppen Small-Worldness (σ), and Guimerà-Amaral hub roles across Yeo-7 modules.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'pearson', label: Text('Pearson')),
+                        ButtonSegment(value: 'partial', label: Text('Partial')),
+                        ButtonSegment(value: 'gcmi', label: Text('GCMI')),
+                        ButtonSegment(value: 'te_out', label: Text('TE')),
+                      ],
+                      selected: {_graphMetric},
+                      onSelectionChanged: (v) {
+                        setState(() => _graphMetric = v.first);
+                        _loadGraphTheory();
+                      },
+                    ),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(value: true, label: Text('Weighted')),
+                        ButtonSegment(value: false, label: Text('Binary')),
+                      ],
+                      selected: {_graphWeighted},
+                      onSelectionChanged: (v) {
+                        setState(() => _graphWeighted = v.first);
+                        _loadGraphTheory();
+                      },
+                    ),
+                    SizedBox(
+                      width: 240,
+                      child: Row(
+                        children: [
+                          Text('Density: ${(_graphDensity * 100).round()}%',
+                              style: const TextStyle(fontSize: 12.5)),
+                          Expanded(
+                            child: Slider(
+                              value: _graphDensity,
+                              min: 0.05,
+                              max: 0.50,
+                              divisions: 9,
+                              onChanged: (v) => setState(() => _graphDensity = v),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _loadingGraph ? null : _loadGraphTheory,
+                      icon: _loadingGraph
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.account_tree),
+                      label: Text(_loadingGraph ? 'Computing…' : 'Compute Graph Metrics'),
+                    ),
+                  ],
+                ),
+                if (_graphError != null) ...[
+                  const SizedBox(height: 8),
+                  Text('Error: $_graphError', style: const TextStyle(color: Color(0xFFFCA5A5))),
+                ],
+              ],
+            ),
+          ),
+          if (g != null) ...[
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _kpiBox('Global Efficiency (E_glob)', g.globalEfficiency.toStringAsFixed(3), 'Network integration', const Color(0xFF2DD4BF)),
+                _kpiBox('Local Efficiency (E_loc)', g.meanLocalEfficiency.toStringAsFixed(3), 'Fault tolerance / segregation', const Color(0xFF38BDF8)),
+                _kpiBox('Clustering Coeff (C)', g.clusteringCoeff.toStringAsFixed(3), 'Onnela triangle density', const Color(0xFF34D399)),
+                _kpiBox('Path Length (L)', g.charPathLength.toStringAsFixed(2), 'Mean shortest geodesic', const Color(0xFF818CF8)),
+                _kpiBox('Small-Worldness (σ)', g.smallWorldness.toStringAsFixed(2), g.smallWorldness > 1.0 ? 'σ > 1 (Small-world)' : 'Sub-threshold / lattice', const Color(0xFFF59E0B)),
+                _kpiBox('Modularity (Q)', g.modularityQ.toStringAsFixed(3), 'Yeo-7 community segregation', const Color(0xFFA78BFA)),
+                _kpiBox('Assortativity (r)', g.assortativity.toStringAsFixed(3), 'Degree correlation (${g.nEdges} edges)', const Color(0xFFF472B6)),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: _card(
+                    title: 'Proportional Density Sweep (5% – 40%)',
+                    subtitle: 'Tracks E_glob (teal), Clustering C (amber), and Modularity Q (purple) across thresholds.',
+                    child: SizedBox(
+                      height: 260,
+                      child: CustomPaint(
+                        painter: _DensitySweepPainter(sweep: g.sweep),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _card(
+                    title: 'Hub Classification (Participation P_i vs Module z_i)',
+                    subtitle: 'Top-right: Connector Hubs (inter-network bridges) • Top-left: Provincial Hubs (intra-network cores).',
+                    child: SizedBox(
+                      height: 260,
+                      child: CustomPaint(
+                        painter: _HubScatterPainter(
+                          nodal: g.nodal,
+                          colorForNetwork: _networkColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _card(
+              title: 'Top-15 High-Betweenness Nodal Hubs (${g.metric.toUpperCase()})',
+              subtitle: g.exportedCsvPath != null
+                  ? 'Exported full table to: ${g.exportedCsvPath}'
+                  : 'Ranked by Brandes shortest-path betweenness centrality.',
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  headingRowHeight: 36,
+                  dataRowMinHeight: 32,
+                  dataRowMaxHeight: 36,
+                  columns: const [
+                    DataColumn(label: Text('ROI')),
+                    DataColumn(label: Text('Network')),
+                    DataColumn(label: Text('Deg'), numeric: true),
+                    DataColumn(label: Text('Strength'), numeric: true),
+                    DataColumn(label: Text('Clust C_i'), numeric: true),
+                    DataColumn(label: Text('Betweenness'), numeric: true),
+                    DataColumn(label: Text('P_i'), numeric: true),
+                    DataColumn(label: Text('z_i'), numeric: true),
+                  ],
+                  rows: [
+                    for (final n in topNodal)
+                      DataRow(
+                        cells: [
+                          DataCell(Text(n.label, style: const TextStyle(fontSize: 12))),
+                          DataCell(
+                            Text(
+                              n.network,
+                              style: TextStyle(fontSize: 12, color: _networkColor(n.network)),
+                            ),
+                          ),
+                          DataCell(Text('${n.degree}')),
+                          DataCell(Text(n.strength.toStringAsFixed(2))),
+                          DataCell(Text(n.clustering.toStringAsFixed(3))),
+                          DataCell(Text(n.betweenness.toStringAsFixed(4))),
+                          DataCell(Text(n.participationCoeff.toStringAsFixed(3))),
+                          DataCell(Text(n.withinModuleZ.toStringAsFixed(2))),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // TAB 6: ADVANCED STATISTICAL ANALYSIS (NILEARN + STATSMODELS)
+  // ===========================================================================
+  Widget _buildNilearnStatsTab() {
+    final s = widget.summary;
+    final roiCount = s.roiLabels.length;
+    final safeRoi = _glmRoiIndex.clamp(0, math.max(0, roiCount - 1)).toInt();
+    final glmOut = _seedGlmSummary;
+    final grpOut = _groupStatsSummary;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _card(
+            title: 'Single-Subject Seed-to-Voxel GLM & Nilearn Glass Brain Mapping',
+            subtitle:
+                'Regresses any atlas ROI seed onto 4D BOLD MNI voxels, computes Fisher-z maps, applies Nilearn FDR / Bonferroni correction, and renders MNI Glass Brain figures.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 280,
+                      child: DropdownButtonFormField<int>(
+                        initialValue: roiCount > 0 ? safeRoi : null,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Seed ROI',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: [
+                          for (var i = 0; i < roiCount; i++)
+                            DropdownMenuItem(
+                              value: i,
+                              child: Text('#$i ${s.roiLabels[i]}', overflow: TextOverflow.ellipsis),
+                            ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _glmRoiIndex = v);
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 220,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: _glmCorrection,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Correction',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'fdr',
+                            child: Text('BH-FDR (q < α)', overflow: TextOverflow.ellipsis),
+                          ),
+                          DropdownMenuItem(
+                            value: 'bonferroni',
+                            child: Text('Bonferroni (FWER)', overflow: TextOverflow.ellipsis),
+                          ),
+                          DropdownMenuItem(
+                            value: 'fpr',
+                            child: Text('Uncorrected (p < α)', overflow: TextOverflow.ellipsis),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _glmCorrection = v);
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 140,
+                      child: DropdownButtonFormField<double>(
+                        initialValue: _glmAlpha,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Alpha (α)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 0.05, child: Text('0.05')),
+                          DropdownMenuItem(value: 0.01, child: Text('0.01')),
+                          DropdownMenuItem(value: 0.001, child: Text('0.001')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _glmAlpha = v);
+                        },
+                      ),
+                    ),
+                    SizedBox(
+                      width: 155,
+                      child: DropdownButtonFormField<int>(
+                        initialValue: _glmClusterThresh,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Min Cluster',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 0, child: Text('0 vox')),
+                          DropdownMenuItem(value: 10, child: Text('10 vox')),
+                          DropdownMenuItem(value: 20, child: Text('20 vox')),
+                          DropdownMenuItem(value: 50, child: Text('50 vox')),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _glmClusterThresh = v);
+                        },
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _runningSeedGlm ? null : _runSeedGlm,
+                      icon: _runningSeedGlm
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.psychology),
+                      label: Text(_runningSeedGlm ? 'Running GLM…' : 'Run Nilearn Seed-to-Voxel GLM'),
+                    ),
+                  ],
+                ),
+                if (_seedGlmError != null) ...[
+                  const SizedBox(height: 10),
+                  Text('Error: $_seedGlmError', style: const TextStyle(color: Color(0xFFFCA5A5))),
+                ],
+                if (glmOut != null) ...[
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      Chip(label: Text('Seed: ${glmOut['seed_label']}')),
+                      Chip(label: Text('Threshold |z|: ${(glmOut['threshold_z'] as num?)?.toStringAsFixed(2) ?? "N/A"}')),
+                      Chip(label: Text('Peak |z|: ${(glmOut['peak_abs_z'] as num?)?.toStringAsFixed(2) ?? "0"}')),
+                      Chip(label: Text('Significant Voxels: ${glmOut['n_sig_voxels']}')),
+                      Chip(label: Text('Clusters: ${glmOut['n_clusters']}')),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (glmOut['glass_brain_png'] is String &&
+                          File(glmOut['glass_brain_png'] as String).existsSync())
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              File(glmOut['glass_brain_png'] as String),
+                              key: ValueKey('glass_$_seedGlmRunSeq'),
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 12),
+                      if (glmOut['stat_map_png'] is String &&
+                          File(glmOut['stat_map_png'] as String).existsSync())
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.file(
+                              File(glmOut['stat_map_png'] as String),
+                              key: ValueKey('ortho_$_seedGlmRunSeq'),
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (glmOut['clusters'] is List && (glmOut['clusters'] as List).isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        headingRowHeight: 34,
+                        dataRowMinHeight: 30,
+                        dataRowMaxHeight: 34,
+                        columns: const [
+                          DataColumn(label: Text('Cluster')),
+                          DataColumn(label: Text('MNI (X, Y, Z)')),
+                          DataColumn(label: Text('Peak Stat'), numeric: true),
+                          DataColumn(label: Text('Volume (mm³)'), numeric: true),
+                        ],
+                        rows: [
+                          for (final c in (glmOut['clusters'] as List).cast<Map<String, dynamic>>())
+                            DataRow(
+                              cells: [
+                                DataCell(Text('${c['cluster_id']}')),
+                                DataCell(Text('(${(c['x'] as num).toStringAsFixed(0)}, ${(c['y'] as num).toStringAsFixed(0)}, ${(c['z'] as num).toStringAsFixed(0)})')),
+                                DataCell(Text((c['peak_stat'] as num).toStringAsFixed(2))),
+                                DataCell(Text((c['cluster_size_mm3'] as num).toStringAsFixed(0))),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _card(
+            title: 'Group / Batch Statistical Analysis (FDR + NBS + Tangent Decoding + LMM)',
+            subtitle:
+                'Run mass-univariate edgewise tests (Benjamini-Hochberg FDR), Network-Based Statistic (NBS) permutation clusters, Log-Euclidean Tangent-Space CV decoding, and Mixed-Effects LMM on batch_summary.csv.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: _groupBatchCsvCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Batch Summary CSV (batch_summary.csv)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final res = await FilePicker.pickFiles(
+                          dialogTitle: 'Select batch_summary.csv',
+                          type: FileType.custom,
+                          allowedExtensions: ['csv'],
+                        );
+                        final p = res?.files.single.path;
+                        if (p != null && p.isNotEmpty) {
+                          setState(() => _groupBatchCsvCtrl.text = p);
+                        }
+                      },
+                      icon: const Icon(Icons.folder_open),
+                      label: const Text('Browse'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 10,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 140,
+                      child: TextField(
+                        controller: _groupACtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Group A (Baseline)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 140,
+                      child: TextField(
+                        controller: _groupBCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Group B (Compare)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    FilterChip(
+                      label: const Text('Paired Within-Subject'),
+                      selected: _groupPaired,
+                      onSelected: (v) => setState(() => _groupPaired = v),
+                    ),
+                    SizedBox(
+                      width: 185,
+                      child: DropdownButtonFormField<int>(
+                        initialValue: _groupNPerm,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'NBS Permutations',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 100,
+                            child: Text('100 perms', overflow: TextOverflow.ellipsis),
+                          ),
+                          DropdownMenuItem(
+                            value: 250,
+                            child: Text('250 perms', overflow: TextOverflow.ellipsis),
+                          ),
+                          DropdownMenuItem(
+                            value: 500,
+                            child: Text('500 perms', overflow: TextOverflow.ellipsis),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) setState(() => _groupNPerm = v);
+                        },
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: _runningGroupStats ? null : _runGroupStats,
+                      icon: _runningGroupStats
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.bar_chart),
+                      label: Text(_runningGroupStats ? 'Running Group Stats…' : 'Run Nilearn Group Stats'),
+                    ),
+                  ],
+                ),
+                if (_groupStatsError != null) ...[
+                  const SizedBox(height: 10),
+                  Text('Error: $_groupStatsError', style: const TextStyle(color: Color(0xFFFCA5A5))),
+                ],
+                if (grpOut != null) ...[
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _kpiBox('Sample Sizes', '${grpOut['n_group_a']} vs ${grpOut['n_group_b']}', '${grpOut['group_a']} vs ${grpOut['group_b']}', const Color(0xFF38BDF8)),
+                      _kpiBox('FDR Sig. Edges', '${grpOut['n_fdr_sig_edges']}', 'of ${grpOut['n_edges_tested']} edges tested', const Color(0xFF2DD4BF)),
+                      _kpiBox('NBS Max Cluster', '${grpOut['nbs_max_component_edges']} edges', 'FWER p = ${(grpOut['nbs_p_value'] as num).toStringAsFixed(3)}', const Color(0xFFA78BFA)),
+                      _kpiBox(
+                        'Tangent Decoding',
+                        grpOut['tangent_decoding_acc'] != null
+                            ? '${((grpOut['tangent_decoding_acc'] as num) * 100).toStringAsFixed(1)}%'
+                            : 'Skipped',
+                        '${grpOut['tangent_note']}',
+                        const Color(0xFFF59E0B),
+                      ),
+                    ],
+                  ),
+                  if (grpOut['group_diff_png'] is String &&
+                      File(grpOut['group_diff_png'] as String).existsSync()) ...[
+                    const SizedBox(height: 12),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(
+                        File(grpOut['group_diff_png'] as String),
+                        key: ValueKey('grp_$_groupStatsRunSeq'),
+                        height: 300,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ],
+                  if (grpOut['lmm_results'] is List && (grpOut['lmm_results'] as List).isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: DataTable(
+                        headingRowHeight: 34,
+                        dataRowMinHeight: 30,
+                        dataRowMaxHeight: 34,
+                        columns: const [
+                          DataColumn(label: Text('Biomarker (MixedLM)')),
+                          DataColumn(label: Text('Beta (Est)'), numeric: true),
+                          DataColumn(label: Text('SE'), numeric: true),
+                          DataColumn(label: Text('z-val'), numeric: true),
+                          DataColumn(label: Text('p-val'), numeric: true),
+                        ],
+                        rows: [
+                          for (final r in (grpOut['lmm_results'] as List).cast<Map<String, dynamic>>())
+                            DataRow(
+                              cells: [
+                                DataCell(Text('${r['metric']}')),
+                                DataCell(Text((r['estimate'] as num).toStringAsFixed(4))),
+                                DataCell(Text((r['std_err'] as num).toStringAsFixed(4))),
+                                DataCell(Text((r['z_value'] as num).toStringAsFixed(2))),
+                                DataCell(Text((r['p_value'] as num).toStringAsFixed(4))),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===========================================================================
+  // TAB 7: SUMMARY & EXPORT
   // ===========================================================================
   Widget _buildSummaryExportTab() {
     final s = widget.summary;
@@ -1233,6 +2120,9 @@ class _ResultsDashboardState extends State<ResultsDashboard>
                       'te_matrix.csv',
                       'denoised_timeseries.csv',
                       if (_dynamics?.exportedCsvPath != null) 'roi_dynamics.csv',
+                      if (_graphSummary?.exportedCsvPath != null) 'graph_metrics_nodal.csv',
+                      if (_graphSummary?.exportedJsonPath != null) 'graph_metrics_global.json',
+                      if (_seedGlmSummary != null || _groupStatsSummary != null) 'nilearn_stats/',
                       'biomarkers_summary.json',
                       'clinical_report.md',
                     ])
@@ -1693,6 +2583,7 @@ class _CircularConnectomePainter extends CustomPainter {
     required this.flatMatrix,
     required this.density,
     required this.directed,
+    this.netDirectionalOnly = false,
     required this.signed,
     required this.colorForNetwork,
   });
@@ -1701,6 +2592,7 @@ class _CircularConnectomePainter extends CustomPainter {
   final List<double> flatMatrix;
   final double density;
   final bool directed;
+  final bool netDirectionalOnly;
   final bool signed;
   final Color Function(String) colorForNetwork;
 
@@ -1727,8 +2619,13 @@ class _CircularConnectomePainter extends CustomPainter {
         if (i == j) continue;
         final val = flatMatrix[i * k + j];
         if (!val.isFinite) continue;
-        final mag = signed ? val.abs() : math.max(0.0, val);
-        if (mag > 0) edges.add((i, j, val, mag));
+        if (netDirectionalOnly) {
+          // Draw strictly dominant i -> j net flow direction so arcs never overlap.
+          if (val > 0) edges.add((i, j, val, val));
+        } else {
+          final mag = signed ? val.abs() : math.max(0.0, val);
+          if (mag > 0) edges.add((i, j, val, mag));
+        }
       }
     }
     edges.sort((a, b) => b.$4.compareTo(a.$4));
@@ -1740,39 +2637,67 @@ class _CircularConnectomePainter extends CustomPainter {
       final p1 = positions[i];
       final p2 = positions[j];
       final norm = (mag / maxMag).clamp(0.15, 1.0);
-      final color = (signed && rawVal < 0)
-          ? const Color(0xFF38BDF8).withValues(alpha: 0.35 + 0.55 * norm)
-          : (directed
-              ? const Color(0xFFA78BFA).withValues(alpha: 0.35 + 0.55 * norm)
-              : const Color(0xFFF43F5E).withValues(alpha: 0.35 + 0.55 * norm));
+      final baseColor = (signed && rawVal < 0 && !directed)
+          ? const Color(0xFF38BDF8)
+          : (directed ? const Color(0xFFFACC15) : const Color(0xFFF43F5E));
+      final color = baseColor.withValues(alpha: 0.38 + 0.55 * norm);
 
       final ctrl = Offset.lerp(center, Offset.lerp(p1, p2, 0.5)!, 0.25)!;
       final path = Path()
         ..moveTo(p1.dx, p1.dy)
         ..quadraticBezierTo(ctrl.dx, ctrl.dy, p2.dx, p2.dy);
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = color
-          ..strokeWidth = 1.0 + 3.2 * norm
-          ..style = PaintingStyle.stroke,
-      );
+
+      final strokePaint = Paint()
+        ..strokeWidth = 1.1 + 3.2 * norm
+        ..style = PaintingStyle.stroke;
+      if (directed) {
+        strokePaint.shader = ui.Gradient.linear(
+          p1,
+          p2,
+          [
+            colorForNetwork(networks[i]).withValues(alpha: 0.55 + 0.35 * norm),
+            const Color(0xFFFACC15).withValues(alpha: 0.70 + 0.30 * norm),
+          ],
+        );
+      } else {
+        strokePaint.color = color;
+      }
+      canvas.drawPath(path, strokePaint);
 
       if (directed) {
-        final dir = p2 - ctrl;
-        final len = dir.distance;
-        if (len > 4) {
-          final ux = dir.dx / len;
-          final uy = dir.dy / len;
-          final tip = Offset(p2.dx - ux * 11, p2.dy - uy * 11);
-          final left = Offset(tip.dx - ux * 7 + uy * 4, tip.dy - uy * 7 - ux * 4);
-          final right = Offset(tip.dx - ux * 7 - uy * 4, tip.dy - uy * 7 + ux * 4);
+        // Place high-contrast chevron arrowhead cleanly at t = 0.60 along the quadratic Bezier curve.
+        const t = 0.60;
+        const mt = 1.0 - t;
+        final pos = Offset(
+          mt * mt * p1.dx + 2 * mt * t * ctrl.dx + t * t * p2.dx,
+          mt * mt * p1.dy + 2 * mt * t * ctrl.dy + t * t * p2.dy,
+        );
+        final tan = Offset(
+          2 * mt * (ctrl.dx - p1.dx) + 2 * t * (p2.dx - ctrl.dx),
+          2 * mt * (ctrl.dy - p1.dy) + 2 * t * (p2.dy - ctrl.dy),
+        );
+        final len = tan.distance;
+        if (len > 2) {
+          final ux = tan.dx / len;
+          final uy = tan.dy / len;
+          const headLen = 9.0;
+          const headW = 5.5;
+          final tip = Offset(pos.dx + ux * (headLen * 0.5), pos.dy + uy * (headLen * 0.5));
+          final left = Offset(tip.dx - ux * headLen + uy * headW, tip.dy - uy * headLen - ux * headW);
+          final right = Offset(tip.dx - ux * headLen - uy * headW, tip.dy - uy * headLen + ux * headW);
           final arrow = Path()
             ..moveTo(tip.dx, tip.dy)
             ..lineTo(left.dx, left.dy)
             ..lineTo(right.dx, right.dy)
             ..close();
-          canvas.drawPath(arrow, Paint()..color = color);
+          canvas.drawPath(arrow, Paint()..color = const Color(0xFFFEF08A));
+          canvas.drawPath(
+            arrow,
+            Paint()
+              ..color = const Color(0xFF0F172A)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 0.9,
+          );
         }
       }
     }
@@ -1803,7 +2728,79 @@ class _CircularConnectomePainter extends CustomPainter {
       old.flatMatrix != flatMatrix ||
       old.density != density ||
       old.directed != directed ||
+      old.netDirectionalOnly != netDirectionalOnly ||
       old.networks != networks;
+}
+
+class _NetTeFlowDivergingPainter extends CustomPainter {
+  const _NetTeFlowDivergingPainter({
+    required this.networks,
+    required this.netFlow,
+    required this.colorForNetwork,
+  });
+
+  final List<String> networks;
+  final List<double> netFlow;
+  final Color Function(String) colorForNetwork;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(8)),
+      Paint()..color = const Color(0xFF0B1120),
+    );
+    final k = math.min(networks.length, netFlow.length);
+    if (k == 0) return;
+
+    const padL = 110.0;
+    const padR = 72.0;
+    const padT = 16.0;
+    const padB = 20.0;
+    final plotW = size.width - padL - padR;
+    final plotH = size.height - padT - padB;
+    if (plotW <= 20 || plotH <= 20) return;
+
+    final maxAbs = netFlow.take(k).map((v) => v.abs()).fold<double>(1e-5, math.max);
+    final midX = padL + plotW * 0.5;
+    final rowH = plotH / k;
+    final barH = math.max(8.0, rowH * 0.62);
+
+    canvas.drawLine(
+      Offset(midX, padT),
+      Offset(midX, padT + plotH),
+      Paint()..color = Colors.white24,
+    );
+
+    for (var i = 0; i < k; i++) {
+      final val = netFlow[i];
+      final cy = padT + rowH * (i + 0.5);
+      final w = (val.abs() / maxAbs).clamp(0.0, 1.0) * (plotW * 0.48);
+      final left = val >= 0 ? midX : midX - w;
+      final c = val >= 0 ? const Color(0xFFFACC15) : const Color(0xFF38BDF8);
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(left, cy - barH * 0.5, w, barH),
+          const Radius.circular(3),
+        ),
+        Paint()..color = c.withValues(alpha: 0.85),
+      );
+      _drawText(canvas, networks[i], Offset(8, cy - 6), color: colorForNetwork(networks[i]));
+      _drawText(
+        canvas,
+        val >= 0 ? '+${val.toStringAsFixed(4)}' : val.toStringAsFixed(4),
+        Offset(padL + plotW + 6, cy - 6),
+        color: c,
+      );
+    }
+
+    _drawText(canvas, '← Net Receiver', Offset(padL, padT + plotH + 2), color: const Color(0xFF38BDF8));
+    _drawText(canvas, 'Net Sender →', Offset(padL + plotW - 70, padT + plotH + 2), color: const Color(0xFFFACC15));
+  }
+
+  @override
+  bool shouldRepaint(covariant _NetTeFlowDivergingPainter old) =>
+      old.netFlow != netFlow || old.networks != networks;
 }
 
 class _NetworkDynamicsPainter extends CustomPainter {
@@ -1836,27 +2833,47 @@ class _NetworkDynamicsPainter extends CustomPainter {
     );
     if (networks.isEmpty) return;
 
-    const padL = 42.0;
+    const padL = 48.0;
     const padR = 16.0;
-    const padT = 18.0;
+    const padT = 24.0;
     const padB = 38.0;
     final plotW = size.width - padL - padR;
     final plotH = size.height - padT - padB;
     if (plotW <= 20 || plotH <= 20) return;
 
     final vals = networks.map(_extract).toList();
-    final maxY = vals
-        .map((v) => v.$1 + v.$2)
-        .fold<double>(1e-4, math.max) *
-        1.15;
+    var rawMin = vals.map((v) => v.$1 - v.$2 * 0.5).fold<double>(double.infinity, math.min);
+    var rawMax = vals.map((v) => v.$1 + v.$2 * 0.5).fold<double>(double.negativeInfinity, math.max);
+    if (!rawMin.isFinite || !rawMax.isFinite) return;
+    final span = (rawMax - rawMin).abs();
+    final pad = span > 1e-6 ? span * 0.22 : math.max(rawMax.abs() * 0.08, 0.01);
+    final minY = math.max(0.0, rawMin - pad);
+    final maxY = rawMax + pad;
+    final denomY = math.max(1e-6, maxY - minY);
+
+    for (final frac in [0.0, 0.5, 1.0]) {
+      final gy = padT + plotH * (1.0 - frac);
+      canvas.drawLine(
+        Offset(padL, gy),
+        Offset(padL + plotW, gy),
+        Paint()..color = Colors.white10,
+      );
+      final tickVal = minY + frac * denomY;
+      _drawText(
+        canvas,
+        tickVal < 1.0 ? tickVal.toStringAsFixed(3) : tickVal.toStringAsFixed(2),
+        Offset(4, gy - 6),
+      );
+    }
 
     final colW = plotW / networks.length;
-    final barW = math.max(8.0, colW * 0.56);
+    final barW = math.max(8.0, colW * 0.54);
 
     for (var i = 0; i < networks.length; i++) {
       final (m, sd) = vals[i];
       final cx = padL + colW * (i + 0.5);
-      final h = (m / maxY).clamp(0.0, 1.0) * plotH;
+      final normM = ((m - minY) / denomY).clamp(0.02, 1.0);
+      final h = normM * plotH;
       final topY = padT + plotH - h;
       final c = colorForNetwork(networks[i].networkName);
 
@@ -1869,8 +2886,8 @@ class _NetworkDynamicsPainter extends CustomPainter {
       );
 
       if (sd > 0) {
-        final errTop = padT + plotH - ((m + sd) / maxY).clamp(0.0, 1.0) * plotH;
-        final errBot = padT + plotH - ((m - sd) / maxY).clamp(0.0, 1.0) * plotH;
+        final errTop = padT + plotH - (((m + sd) - minY) / denomY).clamp(0.0, 1.0) * plotH;
+        final errBot = padT + plotH - (((m - sd) - minY) / denomY).clamp(0.0, 1.0) * plotH;
         final whisker = Paint()
           ..color = Colors.white70
           ..strokeWidth = 1.4;
@@ -1878,14 +2895,21 @@ class _NetworkDynamicsPainter extends CustomPainter {
         canvas.drawLine(Offset(cx - 4, errTop), Offset(cx + 4, errTop), whisker);
       }
 
+      final valLbl = m < 1.0 ? m.toStringAsFixed(3) : m.toStringAsFixed(2);
+      _drawText(
+        canvas,
+        valLbl,
+        Offset(cx - 14, math.max(4.0, topY - 14)),
+        color: Colors.white70,
+        fontSize: 9.0,
+      );
+
       _drawText(
         canvas,
         networks[i].networkName,
         Offset(cx - colW * 0.45, padT + plotH + 6),
       );
     }
-    _drawText(canvas, maxY.toStringAsFixed(2), const Offset(4, padT));
-    _drawText(canvas, '0', Offset(18, padT + plotH - 10));
   }
 
   @override
@@ -1893,11 +2917,130 @@ class _NetworkDynamicsPainter extends CustomPainter {
       old.networks != networks || old.metric != metric;
 }
 
-void _drawText(Canvas canvas, String text, Offset offset) {
+class _DensitySweepPainter extends CustomPainter {
+  const _DensitySweepPainter({required this.sweep});
+  final List<rust_api.DensitySweepDto> sweep;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(8)),
+      Paint()..color = const Color(0xFF0B1120),
+    );
+    if (sweep.length < 2) return;
+    const padL = 38.0;
+    const padR = 14.0;
+    const padT = 18.0;
+    const padB = 28.0;
+    final plotW = size.width - padL - padR;
+    final plotH = size.height - padT - padB;
+    if (plotW <= 20 || plotH <= 20) return;
+
+    void plotSeries(List<double> ys, Color c) {
+      final path = Path();
+      for (var i = 0; i < sweep.length; i++) {
+        final x = padL + (i / (sweep.length - 1)) * plotW;
+        final y = padT + plotH - ys[i].clamp(0.0, 1.0) * plotH;
+        if (i == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, y);
+        }
+        canvas.drawCircle(Offset(x, y), 3.0, Paint()..color = c);
+      }
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = c
+          ..strokeWidth = 2.0
+          ..style = PaintingStyle.stroke,
+      );
+    }
+
+    plotSeries(sweep.map((s) => s.globalEfficiency).toList(), const Color(0xFF2DD4BF));
+    plotSeries(sweep.map((s) => s.clusteringCoeff).toList(), const Color(0xFFF59E0B));
+    plotSeries(sweep.map((s) => s.modularityQ).toList(), const Color(0xFFA78BFA));
+
+    _drawText(canvas, '1.0', const Offset(6, padT - 2));
+    _drawText(canvas, '0.0', Offset(6, padT + plotH - 8));
+    _drawAxisLabels(canvas, size, padL, padT + plotH + 6, [
+      '${(sweep.first.density * 100).round()}%',
+      'Density',
+      '${(sweep.last.density * 100).round()}%',
+    ]);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DensitySweepPainter old) => old.sweep != sweep;
+}
+
+class _HubScatterPainter extends CustomPainter {
+  const _HubScatterPainter({
+    required this.nodal,
+    required this.colorForNetwork,
+  });
+
+  final List<rust_api.NodalGraphDto> nodal;
+  final Color Function(String) colorForNetwork;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(8)),
+      Paint()..color = const Color(0xFF0B1120),
+    );
+    if (nodal.isEmpty) return;
+
+    const padL = 38.0;
+    const padR = 16.0;
+    const padT = 18.0;
+    const padB = 28.0;
+    final plotW = size.width - padL - padR;
+    final plotH = size.height - padT - padB;
+    if (plotW <= 20 || plotH <= 20) return;
+
+    const minZ = -2.5;
+    const maxZ = 3.5;
+    // Reference lines: Connector threshold P_i = 0.30, Hub threshold z_i = 1.0
+    final refPx = padL + 0.30 * plotW;
+    final refZy = padT + plotH - ((1.0 - minZ) / (maxZ - minZ)) * plotH;
+    final refPaint = Paint()
+      ..color = Colors.white24
+      ..strokeWidth = 1.0;
+    canvas.drawLine(Offset(refPx, padT), Offset(refPx, padT + plotH), refPaint);
+    canvas.drawLine(Offset(padL, refZy), Offset(padL + plotW, refZy), refPaint);
+
+    for (final n in nodal) {
+      final px = padL + n.participationCoeff.clamp(0.0, 1.0) * plotW;
+      final zy = padT + plotH - ((n.withinModuleZ.clamp(minZ, maxZ) - minZ) / (maxZ - minZ)) * plotH;
+      final radius = (2.5 + n.betweenness * 30.0).clamp(2.5, 6.5);
+      canvas.drawCircle(
+        Offset(px, zy),
+        radius,
+        Paint()..color = colorForNetwork(n.network).withValues(alpha: 0.78),
+      );
+    }
+
+    _drawText(canvas, 'Provincial', Offset(padL + 6, padT + 4), color: const Color(0xFF94A3B8), fontSize: 9.5);
+    _drawText(canvas, 'Connector Hubs', Offset(padL + plotW - 78, padT + 4), color: const Color(0xFF2DD4BF), fontSize: 9.5);
+    _drawAxisLabels(canvas, size, padL, padT + plotH + 6, ['P_i = 0.0', 'Participation P_i', '1.0']);
+  }
+
+  @override
+  bool shouldRepaint(covariant _HubScatterPainter old) => old.nodal != nodal;
+}
+
+void _drawText(
+  Canvas canvas,
+  String text,
+  Offset offset, {
+  Color color = const Color(0xFF94A3B8),
+  double fontSize = 10,
+}) {
   final tp = TextPainter(
     text: TextSpan(
       text: text,
-      style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10),
+      style: TextStyle(color: color, fontSize: fontSize),
     ),
     textDirection: TextDirection.ltr,
   )..layout();

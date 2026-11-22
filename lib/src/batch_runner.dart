@@ -495,6 +495,7 @@ class BatchRunner {
             fdThresholdMm: config.fdThresholdMm,
             maxDamagePct: config.maxDamagePct,
             lesionDilateVoxels: 1,
+            censorMode: 'interpolate',
             outDir: resDir,
           );
 

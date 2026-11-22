@@ -341,25 +341,155 @@ fn zscore_slice(s: &[f64]) -> Option<Vec<f64>> {
     Some(s.iter().map(|&v| (v - mean) / sd).collect())
 }
 
+fn ln_gamma(z: f64) -> f64 {
+    const COEFFS: [f64; 9] = [
+        0.99999999999980993,
+        676.5203681218851,
+        -1259.1392167224028,
+        771.32342877765313,
+        -176.61502916214059,
+        12.507343278686905,
+        -0.13857109526572012,
+        9.9843695780195716e-6,
+        1.5056327351493116e-7,
+    ];
+    let z = z - 1.0;
+    let mut x = COEFFS[0];
+    for (i, &c) in COEFFS.iter().enumerate().skip(1) {
+        x += c / (z + i as f64);
+    }
+    let t = z + 7.5;
+    0.5 * (2.0 * PI).ln() + (z + 0.5) * t.ln() - t + x.ln()
+}
+
+fn betacf(a: f64, b: f64, x: f64) -> f64 {
+    const MAX_ITER: usize = 200;
+    const EPS: f64 = 3e-12;
+    const FPMIN: f64 = 1e-30;
+    let qab = a + b;
+    let qap = a + 1.0;
+    let qam = a - 1.0;
+    let mut c = 1.0;
+    let mut d = 1.0 - qab * x / qap;
+    if d.abs() < FPMIN {
+        d = FPMIN;
+    }
+    d = 1.0 / d;
+    let mut h = d;
+    for m in 1..=MAX_ITER {
+        let mf = m as f64;
+        let m2 = 2.0 * mf;
+        let aa = mf * (b - mf) * x / ((qam + m2) * (a + m2));
+        d = 1.0 + aa * d;
+        if d.abs() < FPMIN {
+            d = FPMIN;
+        }
+        c = 1.0 + aa / c;
+        if c.abs() < FPMIN {
+            c = FPMIN;
+        }
+        d = 1.0 / d;
+        h *= d * c;
+        let aa2 = -(a + mf) * (qab + mf) * x / ((a + m2) * (qap + m2));
+        d = 1.0 + aa2 * d;
+        if d.abs() < FPMIN {
+            d = FPMIN;
+        }
+        c = 1.0 + aa2 / c;
+        if c.abs() < FPMIN {
+            c = FPMIN;
+        }
+        d = 1.0 / d;
+        let del = d * c;
+        h *= del;
+        if (del - 1.0).abs() < EPS {
+            break;
+        }
+    }
+    h
+}
+
+fn betai(a: f64, b: f64, x: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+    let bt = (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln()).exp();
+    if x < (a + 1.0) / (a + b + 2.0) {
+        bt * betacf(a, b, x) / a
+    } else {
+        1.0 - bt * betacf(b, a, 1.0 - x) / b
+    }
+}
+
+/// Computes one-way ANOVA `(F_stat, p_value)` across integer group IDs (ignores non-finite values).
+pub fn one_way_anova_by_group(values: &[f64], groups: &[usize]) -> (f64, f64) {
+    use std::collections::BTreeMap;
+    let mut buckets: BTreeMap<usize, Vec<f64>> = BTreeMap::new();
+    for (&v, &g) in values.iter().zip(groups.iter()) {
+        if v.is_finite() {
+            buckets.entry(g).or_default().push(v);
+        }
+    }
+    let k = buckets.len();
+    let n: usize = buckets.values().map(|v| v.len()).sum();
+    if k < 2 || n <= k {
+        return (0.0, 1.0);
+    }
+
+    let grand_mean = buckets.values().flatten().sum::<f64>() / (n as f64);
+    let mut ss_between = 0.0_f64;
+    let mut ss_within = 0.0_f64;
+    for g_vals in buckets.values() {
+        let gm = g_vals.iter().sum::<f64>() / (g_vals.len() as f64);
+        let d = gm - grand_mean;
+        ss_between += (g_vals.len() as f64) * d * d;
+        for &v in g_vals {
+            let dw = v - gm;
+            ss_within += dw * dw;
+        }
+    }
+
+    let df1 = (k - 1) as f64;
+    let df2 = (n - k) as f64;
+    if ss_within <= 1e-18 {
+        return (if ss_between > 1e-18 { 999.0 } else { 0.0 }, if ss_between > 1e-18 { 0.0 } else { 1.0 });
+    }
+    let ms_between = ss_between / df1;
+    let ms_within = ss_within / df2;
+    let f = (ms_between / ms_within).max(0.0);
+    let x = (df2 / (df2 + df1 * f)).clamp(0.0, 1.0);
+    let p = betai(0.5 * df2, 0.5 * df1, x).clamp(0.0, 1.0);
+    (f, p)
+}
+
 /// Computes sliding-window complexity & timescale dynamics across all ROIs (Rayon parallel).
-pub fn compute_sliding_dynamics(
+/// Set `skip_bandpass = true` when `clean_ts` is already bandpassed to `[low_hz, high_hz]`.
+pub fn compute_sliding_dynamics_opt(
     clean_ts: ArrayView2<'_, f64>,
     tr_sec: f64,
     window_len: usize,
     step: usize,
     low_hz: f64,
     high_hz: f64,
+    skip_bandpass: bool,
 ) -> Result<Vec<RoiDynamicsRow>> {
     let (nt, n_rois) = clean_ts.dim();
-    let filtered = simultaneous_denoise(
-        clean_ts,
-        None,
-        tr_sec,
-        Some(low_hz),
-        Some(high_hz),
-        &[],
-        true,
-    )?;
+    let filtered = if skip_bandpass {
+        clean_ts.to_owned()
+    } else {
+        simultaneous_denoise(
+            clean_ts,
+            None,
+            tr_sec,
+            Some(low_hz),
+            Some(high_hz),
+            &[],
+            true,
+        )?
+    };
 
     let eff_win = window_len.min(nt).max(16.min(nt));
     let eff_step = step.max(1);
@@ -457,4 +587,16 @@ pub fn compute_sliding_dynamics(
         .collect();
 
     Ok(rows)
+}
+
+/// Computes sliding-window complexity & timescale dynamics across all ROIs (Rayon parallel).
+pub fn compute_sliding_dynamics(
+    clean_ts: ArrayView2<'_, f64>,
+    tr_sec: f64,
+    window_len: usize,
+    step: usize,
+    low_hz: f64,
+    high_hz: f64,
+) -> Result<Vec<RoiDynamicsRow>> {
+    compute_sliding_dynamics_opt(clean_ts, tr_sec, window_len, step, low_hz, high_hz, false)
 }

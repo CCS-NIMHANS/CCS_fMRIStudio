@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => 575895238;
+  int get rustContentHash => 448347433;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -89,6 +89,13 @@ abstract class RustLibApi extends BaseApi {
     required double lowHz,
     required double highHz,
     String? outDir,
+  });
+
+  Future<GraphTheorySummaryDto> crateApiComputeGraphTheory({
+    required String metric,
+    required double density,
+    required bool weighted,
+    String? exportDir,
   });
 
   Future<LesionSummaryDto> crateApiEditLesionMaskBrush({
@@ -163,6 +170,7 @@ abstract class RustLibApi extends BaseApi {
     required double fdThresholdMm,
     required double maxDamagePct,
     required int lesionDilateVoxels,
+    String? censorMode,
     String? outDir,
   });
 
@@ -267,6 +275,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<GraphTheorySummaryDto> crateApiComputeGraphTheory({
+    required String metric,
+    required double density,
+    required bool weighted,
+    String? exportDir,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(metric, serializer);
+          sse_encode_f_64(density, serializer);
+          sse_encode_bool(weighted, serializer);
+          sse_encode_opt_String(exportDir, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 3,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_graph_theory_summary_dto,
+          decodeErrorData: sse_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiComputeGraphTheoryConstMeta,
+        argValues: [metric, density, weighted, exportDir],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiComputeGraphTheoryConstMeta => const TaskConstMeta(
+    debugName: "compute_graph_theory",
+    argNames: ["metric", "density", "weighted", "exportDir"],
+  );
+
+  @override
   Future<LesionSummaryDto> crateApiEditLesionMaskBrush({
     required String maskPath,
     required String refNiftiPath,
@@ -294,7 +340,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -359,7 +405,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 5,
             port: port_,
           );
         },
@@ -405,7 +451,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 6,
             port: port_,
           );
         },
@@ -435,7 +481,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 7,
             port: port_,
           );
         },
@@ -470,7 +516,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 8,
             port: port_,
           );
         },
@@ -500,7 +546,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 9,
             port: port_,
           );
         },
@@ -538,7 +584,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 10,
             port: port_,
           );
         },
@@ -583,7 +629,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 11,
             port: port_,
           );
         },
@@ -625,7 +671,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 12,
             port: port_,
           );
         },
@@ -674,6 +720,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required double fdThresholdMm,
     required double maxDamagePct,
     required int lesionDilateVoxels,
+    String? censorMode,
     String? outDir,
   }) {
     return handler.executeNormal(
@@ -692,11 +739,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_f_64(fdThresholdMm, serializer);
           sse_encode_f_64(maxDamagePct, serializer);
           sse_encode_u_32(lesionDilateVoxels, serializer);
+          sse_encode_opt_String(censorMode, serializer);
           sse_encode_opt_String(outDir, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 13,
             port: port_,
           );
         },
@@ -718,6 +766,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           fdThresholdMm,
           maxDamagePct,
           lesionDilateVoxels,
+          censorMode,
           outDir,
         ],
         apiImpl: this,
@@ -741,6 +790,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "fdThresholdMm",
           "maxDamagePct",
           "lesionDilateVoxels",
+          "censorMode",
           "outDir",
         ],
       );
@@ -771,7 +821,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 14,
             port: port_,
           );
         },
@@ -858,11 +908,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DensitySweepDto dco_decode_density_sweep_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
+    return DensitySweepDto(
+      density: dco_decode_f_64(arr[0]),
+      globalEfficiency: dco_decode_f_64(arr[1]),
+      clusteringCoeff: dco_decode_f_64(arr[2]),
+      smallWorldness: dco_decode_f_64(arr[3]),
+      modularityQ: dco_decode_f_64(arr[4]),
+    );
+  }
+
+  @protected
   DynamicsSummaryDto dco_decode_dynamics_summary_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 16)
-      throw Exception('unexpected arr length: expect 16 but see ${arr.length}');
+    if (arr.length != 24)
+      throw Exception('unexpected arr length: expect 24 but see ${arr.length}');
     return DynamicsSummaryDto(
       nIntactRois: dco_decode_u_32(arr[0]),
       lowHz: dco_decode_f_64(arr[1]),
@@ -880,6 +945,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       pleMean: dco_decode_f_64(arr[13]),
       networks: dco_decode_list_network_dynamics_dto(arr[14]),
       exportedCsvPath: dco_decode_opt_String(arr[15]),
+      anovaFAcw0: dco_decode_f_64(arr[16]),
+      anovaPAcw0: dco_decode_f_64(arr[17]),
+      anovaFLzc: dco_decode_f_64(arr[18]),
+      anovaPLzc: dco_decode_f_64(arr[19]),
+      anovaFSampen: dco_decode_f_64(arr[20]),
+      anovaPSampen: dco_decode_f_64(arr[21]),
+      anovaFPle: dco_decode_f_64(arr[22]),
+      anovaPPle: dco_decode_f_64(arr[23]),
     );
   }
 
@@ -909,6 +982,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  GraphTheorySummaryDto dco_decode_graph_theory_summary_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 17)
+      throw Exception('unexpected arr length: expect 17 but see ${arr.length}');
+    return GraphTheorySummaryDto(
+      metric: dco_decode_String(arr[0]),
+      density: dco_decode_f_64(arr[1]),
+      weighted: dco_decode_bool(arr[2]),
+      nIntactNodes: dco_decode_u_32(arr[3]),
+      nExcludedNodes: dco_decode_u_32(arr[4]),
+      nEdges: dco_decode_u_32(arr[5]),
+      globalEfficiency: dco_decode_f_64(arr[6]),
+      meanLocalEfficiency: dco_decode_f_64(arr[7]),
+      clusteringCoeff: dco_decode_f_64(arr[8]),
+      charPathLength: dco_decode_f_64(arr[9]),
+      smallWorldness: dco_decode_f_64(arr[10]),
+      modularityQ: dco_decode_f_64(arr[11]),
+      assortativity: dco_decode_f_64(arr[12]),
+      nodal: dco_decode_list_nodal_graph_dto(arr[13]),
+      sweep: dco_decode_list_density_sweep_dto(arr[14]),
+      exportedCsvPath: dco_decode_opt_String(arr[15]),
+      exportedJsonPath: dco_decode_opt_String(arr[16]),
+    );
+  }
+
+  @protected
   int dco_decode_i_16(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
@@ -918,8 +1018,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   LesionPipelineSummary dco_decode_lesion_pipeline_summary(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 45)
-      throw Exception('unexpected arr length: expect 45 but see ${arr.length}');
+    if (arr.length != 51)
+      throw Exception('unexpected arr length: expect 51 but see ${arr.length}');
     return LesionPipelineSummary(
       nTimepoints: dco_decode_u_32(arr[0]),
       nRois: dco_decode_u_32(arr[1]),
@@ -966,6 +1066,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       netPartialFlat: dco_decode_list_prim_f_32_strict(arr[42]),
       netGcmiFlat: dco_decode_list_prim_f_32_strict(arr[43]),
       netTeFlat: dco_decode_list_prim_f_32_strict(arr[44]),
+      censorMode: dco_decode_String(arr[45]),
+      nRegressors: dco_decode_u_32(arr[46]),
+      dofRemaining: dco_decode_u_32(arr[47]),
+      teNetPreviewRgba: dco_decode_list_prim_u_8_strict(arr[48]),
+      netTeAsymFlat: dco_decode_list_prim_f_32_strict(arr[49]),
+      netTeOutMinusIn: dco_decode_list_prim_f_32_strict(arr[50]),
     );
   }
 
@@ -991,9 +1097,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<DensitySweepDto> dco_decode_list_density_sweep_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_density_sweep_dto).toList();
+  }
+
+  @protected
   List<NetworkDynamicsDto> dco_decode_list_network_dynamics_dto(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_network_dynamics_dto).toList();
+  }
+
+  @protected
+  List<NodalGraphDto> dco_decode_list_nodal_graph_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_nodal_graph_dto).toList();
   }
 
   @protected
@@ -1070,6 +1188,26 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       trSec: dco_decode_f_64(arr[2]),
       datatypeCode: dco_decode_i_16(arr[3]),
       affineFlat: dco_decode_list_prim_f_32_strict(arr[4]),
+    );
+  }
+
+  @protected
+  NodalGraphDto dco_decode_nodal_graph_dto(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 10)
+      throw Exception('unexpected arr length: expect 10 but see ${arr.length}');
+    return NodalGraphDto(
+      roiIndex: dco_decode_u_32(arr[0]),
+      label: dco_decode_String(arr[1]),
+      network: dco_decode_String(arr[2]),
+      degree: dco_decode_u_32(arr[3]),
+      strength: dco_decode_f_64(arr[4]),
+      clustering: dco_decode_f_64(arr[5]),
+      localEfficiency: dco_decode_f_64(arr[6]),
+      betweenness: dco_decode_f_64(arr[7]),
+      participationCoeff: dco_decode_f_64(arr[8]),
+      withinModuleZ: dco_decode_f_64(arr[9]),
     );
   }
 
@@ -1262,6 +1400,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  DensitySweepDto sse_decode_density_sweep_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_density = sse_decode_f_64(deserializer);
+    var var_globalEfficiency = sse_decode_f_64(deserializer);
+    var var_clusteringCoeff = sse_decode_f_64(deserializer);
+    var var_smallWorldness = sse_decode_f_64(deserializer);
+    var var_modularityQ = sse_decode_f_64(deserializer);
+    return DensitySweepDto(
+      density: var_density,
+      globalEfficiency: var_globalEfficiency,
+      clusteringCoeff: var_clusteringCoeff,
+      smallWorldness: var_smallWorldness,
+      modularityQ: var_modularityQ,
+    );
+  }
+
+  @protected
   DynamicsSummaryDto sse_decode_dynamics_summary_dto(
     SseDeserializer deserializer,
   ) {
@@ -1282,6 +1437,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_pleMean = sse_decode_f_64(deserializer);
     var var_networks = sse_decode_list_network_dynamics_dto(deserializer);
     var var_exportedCsvPath = sse_decode_opt_String(deserializer);
+    var var_anovaFAcw0 = sse_decode_f_64(deserializer);
+    var var_anovaPAcw0 = sse_decode_f_64(deserializer);
+    var var_anovaFLzc = sse_decode_f_64(deserializer);
+    var var_anovaPLzc = sse_decode_f_64(deserializer);
+    var var_anovaFSampen = sse_decode_f_64(deserializer);
+    var var_anovaPSampen = sse_decode_f_64(deserializer);
+    var var_anovaFPle = sse_decode_f_64(deserializer);
+    var var_anovaPPle = sse_decode_f_64(deserializer);
     return DynamicsSummaryDto(
       nIntactRois: var_nIntactRois,
       lowHz: var_lowHz,
@@ -1299,6 +1462,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       pleMean: var_pleMean,
       networks: var_networks,
       exportedCsvPath: var_exportedCsvPath,
+      anovaFAcw0: var_anovaFAcw0,
+      anovaPAcw0: var_anovaPAcw0,
+      anovaFLzc: var_anovaFLzc,
+      anovaPLzc: var_anovaPLzc,
+      anovaFSampen: var_anovaFSampen,
+      anovaPSampen: var_anovaPSampen,
+      anovaFPle: var_anovaFPle,
+      anovaPPle: var_anovaPPle,
     );
   }
 
@@ -1325,6 +1496,49 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   double sse_decode_f_64(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getFloat64();
+  }
+
+  @protected
+  GraphTheorySummaryDto sse_decode_graph_theory_summary_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_metric = sse_decode_String(deserializer);
+    var var_density = sse_decode_f_64(deserializer);
+    var var_weighted = sse_decode_bool(deserializer);
+    var var_nIntactNodes = sse_decode_u_32(deserializer);
+    var var_nExcludedNodes = sse_decode_u_32(deserializer);
+    var var_nEdges = sse_decode_u_32(deserializer);
+    var var_globalEfficiency = sse_decode_f_64(deserializer);
+    var var_meanLocalEfficiency = sse_decode_f_64(deserializer);
+    var var_clusteringCoeff = sse_decode_f_64(deserializer);
+    var var_charPathLength = sse_decode_f_64(deserializer);
+    var var_smallWorldness = sse_decode_f_64(deserializer);
+    var var_modularityQ = sse_decode_f_64(deserializer);
+    var var_assortativity = sse_decode_f_64(deserializer);
+    var var_nodal = sse_decode_list_nodal_graph_dto(deserializer);
+    var var_sweep = sse_decode_list_density_sweep_dto(deserializer);
+    var var_exportedCsvPath = sse_decode_opt_String(deserializer);
+    var var_exportedJsonPath = sse_decode_opt_String(deserializer);
+    return GraphTheorySummaryDto(
+      metric: var_metric,
+      density: var_density,
+      weighted: var_weighted,
+      nIntactNodes: var_nIntactNodes,
+      nExcludedNodes: var_nExcludedNodes,
+      nEdges: var_nEdges,
+      globalEfficiency: var_globalEfficiency,
+      meanLocalEfficiency: var_meanLocalEfficiency,
+      clusteringCoeff: var_clusteringCoeff,
+      charPathLength: var_charPathLength,
+      smallWorldness: var_smallWorldness,
+      modularityQ: var_modularityQ,
+      assortativity: var_assortativity,
+      nodal: var_nodal,
+      sweep: var_sweep,
+      exportedCsvPath: var_exportedCsvPath,
+      exportedJsonPath: var_exportedJsonPath,
+    );
   }
 
   @protected
@@ -1383,6 +1597,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_netPartialFlat = sse_decode_list_prim_f_32_strict(deserializer);
     var var_netGcmiFlat = sse_decode_list_prim_f_32_strict(deserializer);
     var var_netTeFlat = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_censorMode = sse_decode_String(deserializer);
+    var var_nRegressors = sse_decode_u_32(deserializer);
+    var var_dofRemaining = sse_decode_u_32(deserializer);
+    var var_teNetPreviewRgba = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_netTeAsymFlat = sse_decode_list_prim_f_32_strict(deserializer);
+    var var_netTeOutMinusIn = sse_decode_list_prim_f_32_strict(deserializer);
     return LesionPipelineSummary(
       nTimepoints: var_nTimepoints,
       nRois: var_nRois,
@@ -1429,6 +1649,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       netPartialFlat: var_netPartialFlat,
       netGcmiFlat: var_netGcmiFlat,
       netTeFlat: var_netTeFlat,
+      censorMode: var_censorMode,
+      nRegressors: var_nRegressors,
+      dofRemaining: var_dofRemaining,
+      teNetPreviewRgba: var_teNetPreviewRgba,
+      netTeAsymFlat: var_netTeAsymFlat,
+      netTeOutMinusIn: var_netTeOutMinusIn,
     );
   }
 
@@ -1462,6 +1688,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<DensitySweepDto> sse_decode_list_density_sweep_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <DensitySweepDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_density_sweep_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<NetworkDynamicsDto> sse_decode_list_network_dynamics_dto(
     SseDeserializer deserializer,
   ) {
@@ -1471,6 +1711,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <NetworkDynamicsDto>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_network_dynamics_dto(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<NodalGraphDto> sse_decode_list_nodal_graph_dto(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <NodalGraphDto>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_nodal_graph_dto(deserializer));
     }
     return ans_;
   }
@@ -1586,6 +1840,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       trSec: var_trSec,
       datatypeCode: var_datatypeCode,
       affineFlat: var_affineFlat,
+    );
+  }
+
+  @protected
+  NodalGraphDto sse_decode_nodal_graph_dto(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_roiIndex = sse_decode_u_32(deserializer);
+    var var_label = sse_decode_String(deserializer);
+    var var_network = sse_decode_String(deserializer);
+    var var_degree = sse_decode_u_32(deserializer);
+    var var_strength = sse_decode_f_64(deserializer);
+    var var_clustering = sse_decode_f_64(deserializer);
+    var var_localEfficiency = sse_decode_f_64(deserializer);
+    var var_betweenness = sse_decode_f_64(deserializer);
+    var var_participationCoeff = sse_decode_f_64(deserializer);
+    var var_withinModuleZ = sse_decode_f_64(deserializer);
+    return NodalGraphDto(
+      roiIndex: var_roiIndex,
+      label: var_label,
+      network: var_network,
+      degree: var_degree,
+      strength: var_strength,
+      clustering: var_clustering,
+      localEfficiency: var_localEfficiency,
+      betweenness: var_betweenness,
+      participationCoeff: var_participationCoeff,
+      withinModuleZ: var_withinModuleZ,
     );
   }
 
@@ -1805,6 +2086,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_density_sweep_dto(
+    DensitySweepDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_f_64(self.density, serializer);
+    sse_encode_f_64(self.globalEfficiency, serializer);
+    sse_encode_f_64(self.clusteringCoeff, serializer);
+    sse_encode_f_64(self.smallWorldness, serializer);
+    sse_encode_f_64(self.modularityQ, serializer);
+  }
+
+  @protected
   void sse_encode_dynamics_summary_dto(
     DynamicsSummaryDto self,
     SseSerializer serializer,
@@ -1826,6 +2120,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.pleMean, serializer);
     sse_encode_list_network_dynamics_dto(self.networks, serializer);
     sse_encode_opt_String(self.exportedCsvPath, serializer);
+    sse_encode_f_64(self.anovaFAcw0, serializer);
+    sse_encode_f_64(self.anovaPAcw0, serializer);
+    sse_encode_f_64(self.anovaFLzc, serializer);
+    sse_encode_f_64(self.anovaPLzc, serializer);
+    sse_encode_f_64(self.anovaFSampen, serializer);
+    sse_encode_f_64(self.anovaPSampen, serializer);
+    sse_encode_f_64(self.anovaFPle, serializer);
+    sse_encode_f_64(self.anovaPPle, serializer);
   }
 
   @protected
@@ -1846,6 +2148,31 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_f_64(double self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putFloat64(self);
+  }
+
+  @protected
+  void sse_encode_graph_theory_summary_dto(
+    GraphTheorySummaryDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.metric, serializer);
+    sse_encode_f_64(self.density, serializer);
+    sse_encode_bool(self.weighted, serializer);
+    sse_encode_u_32(self.nIntactNodes, serializer);
+    sse_encode_u_32(self.nExcludedNodes, serializer);
+    sse_encode_u_32(self.nEdges, serializer);
+    sse_encode_f_64(self.globalEfficiency, serializer);
+    sse_encode_f_64(self.meanLocalEfficiency, serializer);
+    sse_encode_f_64(self.clusteringCoeff, serializer);
+    sse_encode_f_64(self.charPathLength, serializer);
+    sse_encode_f_64(self.smallWorldness, serializer);
+    sse_encode_f_64(self.modularityQ, serializer);
+    sse_encode_f_64(self.assortativity, serializer);
+    sse_encode_list_nodal_graph_dto(self.nodal, serializer);
+    sse_encode_list_density_sweep_dto(self.sweep, serializer);
+    sse_encode_opt_String(self.exportedCsvPath, serializer);
+    sse_encode_opt_String(self.exportedJsonPath, serializer);
   }
 
   @protected
@@ -1905,6 +2232,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_prim_f_32_strict(self.netPartialFlat, serializer);
     sse_encode_list_prim_f_32_strict(self.netGcmiFlat, serializer);
     sse_encode_list_prim_f_32_strict(self.netTeFlat, serializer);
+    sse_encode_String(self.censorMode, serializer);
+    sse_encode_u_32(self.nRegressors, serializer);
+    sse_encode_u_32(self.dofRemaining, serializer);
+    sse_encode_list_prim_u_8_strict(self.teNetPreviewRgba, serializer);
+    sse_encode_list_prim_f_32_strict(self.netTeAsymFlat, serializer);
+    sse_encode_list_prim_f_32_strict(self.netTeOutMinusIn, serializer);
   }
 
   @protected
@@ -1930,6 +2263,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_density_sweep_dto(
+    List<DensitySweepDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_density_sweep_dto(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_network_dynamics_dto(
     List<NetworkDynamicsDto> self,
     SseSerializer serializer,
@@ -1938,6 +2283,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_network_dynamics_dto(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_nodal_graph_dto(
+    List<NodalGraphDto> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_nodal_graph_dto(item, serializer);
     }
   }
 
@@ -2042,6 +2399,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_f_64(self.trSec, serializer);
     sse_encode_i_16(self.datatypeCode, serializer);
     sse_encode_list_prim_f_32_strict(self.affineFlat, serializer);
+  }
+
+  @protected
+  void sse_encode_nodal_graph_dto(
+    NodalGraphDto self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.roiIndex, serializer);
+    sse_encode_String(self.label, serializer);
+    sse_encode_String(self.network, serializer);
+    sse_encode_u_32(self.degree, serializer);
+    sse_encode_f_64(self.strength, serializer);
+    sse_encode_f_64(self.clustering, serializer);
+    sse_encode_f_64(self.localEfficiency, serializer);
+    sse_encode_f_64(self.betweenness, serializer);
+    sse_encode_f_64(self.participationCoeff, serializer);
+    sse_encode_f_64(self.withinModuleZ, serializer);
   }
 
   @protected

@@ -36,6 +36,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DenoisePipelineSummary dco_decode_denoise_pipeline_summary(dynamic raw);
 
   @protected
+  DensitySweepDto dco_decode_density_sweep_dto(dynamic raw);
+
+  @protected
   DynamicsSummaryDto dco_decode_dynamics_summary_dto(dynamic raw);
 
   @protected
@@ -46,6 +49,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double dco_decode_f_64(dynamic raw);
+
+  @protected
+  GraphTheorySummaryDto dco_decode_graph_theory_summary_dto(dynamic raw);
 
   @protected
   int dco_decode_i_16(dynamic raw);
@@ -60,7 +66,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> dco_decode_list_String(dynamic raw);
 
   @protected
+  List<DensitySweepDto> dco_decode_list_density_sweep_dto(dynamic raw);
+
+  @protected
   List<NetworkDynamicsDto> dco_decode_list_network_dynamics_dto(dynamic raw);
+
+  @protected
+  List<NodalGraphDto> dco_decode_list_nodal_graph_dto(dynamic raw);
 
   @protected
   Float32List dco_decode_list_prim_f_32_strict(dynamic raw);
@@ -85,6 +97,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NiftiHeaderSummary dco_decode_nifti_header_summary(dynamic raw);
+
+  @protected
+  NodalGraphDto dco_decode_nodal_graph_dto(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -144,6 +159,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  DensitySweepDto sse_decode_density_sweep_dto(SseDeserializer deserializer);
+
+  @protected
   DynamicsSummaryDto sse_decode_dynamics_summary_dto(
     SseDeserializer deserializer,
   );
@@ -156,6 +174,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
+  GraphTheorySummaryDto sse_decode_graph_theory_summary_dto(
+    SseDeserializer deserializer,
+  );
 
   @protected
   int sse_decode_i_16(SseDeserializer deserializer);
@@ -172,7 +195,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<String> sse_decode_list_String(SseDeserializer deserializer);
 
   @protected
+  List<DensitySweepDto> sse_decode_list_density_sweep_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<NetworkDynamicsDto> sse_decode_list_network_dynamics_dto(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<NodalGraphDto> sse_decode_list_nodal_graph_dto(
     SseDeserializer deserializer,
   );
 
@@ -203,6 +236,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NiftiHeaderSummary sse_decode_nifti_header_summary(
     SseDeserializer deserializer,
   );
+
+  @protected
+  NodalGraphDto sse_decode_nodal_graph_dto(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -274,6 +310,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_density_sweep_dto(
+    DensitySweepDto self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_dynamics_summary_dto(
     DynamicsSummaryDto self,
     SseSerializer serializer,
@@ -287,6 +329,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_graph_theory_summary_dto(
+    GraphTheorySummaryDto self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_i_16(int self, SseSerializer serializer);
@@ -307,8 +355,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_list_String(List<String> self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_density_sweep_dto(
+    List<DensitySweepDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_network_dynamics_dto(
     List<NetworkDynamicsDto> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_nodal_graph_dto(
+    List<NodalGraphDto> self,
     SseSerializer serializer,
   );
 
@@ -359,6 +419,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     NiftiHeaderSummary self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_nodal_graph_dto(NodalGraphDto self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);

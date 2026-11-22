@@ -2,8 +2,12 @@ use crate::connectivity::{
     compute_homotopic_and_laterality, compute_nan_safe_graph_metrics, detect_schaefer_hemispheres,
     lesion_network_mapping, static_fc_pearson,
 };
-use crate::denoise::{compute_acompcor, load_confounds_tsv, load_confounds_with_fd, simultaneous_denoise};
-use crate::dynamics::{compute_sliding_dynamics, welch_psd};
+use crate::denoise::{
+    compute_acompcor, load_confounds_tsv, load_confounds_with_fd, simultaneous_denoise,
+    simultaneous_denoise_with_mode, CensorMode,
+};
+use crate::dynamics::{compute_sliding_dynamics_opt, one_way_anova_by_group, welch_psd};
+use crate::graph_theory::compute_full_graph_theory;
 use crate::info_theory::{
     compute_fc_histogram, compute_gcmi_matrix, compute_partial_correlation_ledoit_wolf,
     compute_transfer_entropy_matrix,
@@ -30,6 +34,8 @@ struct CachedSession {
     raw_ts: Array2<f64>,
     clean_ts: Array2<f64>,
     tr_sec: f64,
+    bandpass_low_hz: f64,
+    bandpass_high_hz: f64,
     roi_labels: Vec<String>,
     network_names: Vec<String>,
     roi_network_indices: Vec<usize>,
@@ -140,6 +146,13 @@ pub struct LesionPipelineSummary {
     pub net_partial_flat: Vec<f32>,
     pub net_gcmi_flat: Vec<f32>,
     pub net_te_flat: Vec<f32>,
+    // v0.4.0 Scrubbing DOF & Net Directional Transfer Entropy
+    pub censor_mode: String,
+    pub n_regressors: u32,
+    pub dof_remaining: u32,
+    pub te_net_preview_rgba: Vec<u8>,
+    pub net_te_asym_flat: Vec<f32>,
+    pub net_te_out_minus_in: Vec<f32>,
 }
 
 pub struct RoiTraceDto {
@@ -218,6 +231,55 @@ pub struct DynamicsSummaryDto {
     pub ple_mean: f64,
     pub networks: Vec<NetworkDynamicsDto>,
     pub exported_csv_path: Option<String>,
+    pub anova_f_acw0: f64,
+    pub anova_p_acw0: f64,
+    pub anova_f_lzc: f64,
+    pub anova_p_lzc: f64,
+    pub anova_f_sampen: f64,
+    pub anova_p_sampen: f64,
+    pub anova_f_ple: f64,
+    pub anova_p_ple: f64,
+}
+
+pub struct NodalGraphDto {
+    pub roi_index: u32,
+    pub label: String,
+    pub network: String,
+    pub degree: u32,
+    pub strength: f64,
+    pub clustering: f64,
+    pub local_efficiency: f64,
+    pub betweenness: f64,
+    pub participation_coeff: f64,
+    pub within_module_z: f64,
+}
+
+pub struct DensitySweepDto {
+    pub density: f64,
+    pub global_efficiency: f64,
+    pub clustering_coeff: f64,
+    pub small_worldness: f64,
+    pub modularity_q: f64,
+}
+
+pub struct GraphTheorySummaryDto {
+    pub metric: String,
+    pub density: f64,
+    pub weighted: bool,
+    pub n_intact_nodes: u32,
+    pub n_excluded_nodes: u32,
+    pub n_edges: u32,
+    pub global_efficiency: f64,
+    pub mean_local_efficiency: f64,
+    pub clustering_coeff: f64,
+    pub char_path_length: f64,
+    pub small_worldness: f64,
+    pub modularity_q: f64,
+    pub assortativity: f64,
+    pub nodal: Vec<NodalGraphDto>,
+    pub sweep: Vec<DensitySweepDto>,
+    pub exported_csv_path: Option<String>,
+    pub exported_json_path: Option<String>,
 }
 
 fn to_lesion_dto(s: LesionSummary) -> LesionSummaryDto {
@@ -798,6 +860,94 @@ fn aggregate_network_matrix(
         .collect()
 }
 
+pub(crate) fn compute_te_net_asymmetry_matrix(te: ArrayView2<'_, f64>) -> Array2<f64> {
+    let n = te.nrows().min(te.ncols());
+    let mut asym = Array2::<f64>::from_elem((n, n), f64::NAN);
+    for i in 0..n {
+        if !te[[i, i]].is_finite() {
+            continue;
+        }
+        asym[[i, i]] = 0.0;
+        for j in (i + 1)..n {
+            let ij = te[[i, j]];
+            let ji = te[[j, i]];
+            if ij.is_finite() && ji.is_finite() {
+                let d = ij - ji;
+                asym[[i, j]] = d;
+                asym[[j, i]] = -d;
+            }
+        }
+    }
+    asym
+}
+
+pub(crate) fn render_diverging_matrix_rgba(mat: ArrayView2<'_, f64>) -> Vec<u8> {
+    let n = mat.nrows().min(mat.ncols());
+    let mut abs_vals: Vec<f64> = Vec::with_capacity(n * n);
+    for i in 0..n {
+        for j in 0..n {
+            if i != j && mat[[i, j]].is_finite() {
+                abs_vals.push(mat[[i, j]].abs());
+            }
+        }
+    }
+    let scale = if abs_vals.is_empty() {
+        0.02
+    } else {
+        abs_vals.sort_by(|a, b| a.total_cmp(b));
+        let idx = ((abs_vals.len() as f64) * 0.98)
+            .floor()
+            .clamp(0.0, (abs_vals.len() - 1) as f64) as usize;
+        abs_vals[idx].max(1e-4)
+    };
+
+    let mut rgba = Vec::with_capacity(n * n * 4);
+    for i in 0..n {
+        for j in 0..n {
+            let val = mat[[i, j]];
+            if !val.is_finite() {
+                rgba.extend_from_slice(&[30, 41, 59, 255]);
+            } else if val >= 0.0 {
+                let t = (val / scale).clamp(0.0, 1.0);
+                rgba.push(lerp_u8(248, 220, t));
+                rgba.push(lerp_u8(250, 38, t));
+                rgba.push(lerp_u8(252, 38, t));
+                rgba.push(255);
+            } else {
+                let t = ((-val) / scale).clamp(0.0, 1.0);
+                rgba.push(lerp_u8(248, 29, t));
+                rgba.push(lerp_u8(250, 78, t));
+                rgba.push(lerp_u8(252, 216, t));
+                rgba.push(255);
+            }
+        }
+    }
+    rgba
+}
+
+pub(crate) fn compute_net_te_out_minus_in(net_te_flat: &[f32], k: usize) -> Vec<f32> {
+    if k < 2 || net_te_flat.len() < k * k {
+        return vec![0.0; k];
+    }
+    (0..k)
+        .map(|i| {
+            let mut sum = 0.0_f64;
+            let mut cnt = 0_usize;
+            for j in 0..k {
+                if i != j {
+                    let out_v = net_te_flat[i * k + j] as f64;
+                    let in_v = net_te_flat[j * k + i] as f64;
+                    if out_v.is_finite() && in_v.is_finite() {
+                        sum += out_v - in_v;
+                        cnt += 1;
+                    }
+                }
+            }
+            if cnt > 0 { (sum / cnt as f64) as f32 } else { 0.0 }
+        })
+        .collect()
+}
+
 pub fn run_lesion_aware_pipeline(
     bold_path: String,
     atlas_path: String,
@@ -811,6 +961,7 @@ pub fn run_lesion_aware_pipeline(
     fd_threshold_mm: f64,
     max_damage_pct: f64,
     lesion_dilate_voxels: u32,
+    censor_mode: Option<String>,
     out_dir: Option<String>,
 ) -> Result<LesionPipelineSummary> {
     let t_total = Instant::now();
@@ -886,15 +1037,21 @@ pub fn run_lesion_aware_pipeline(
 
     let low_opt = if low_hz > 0.0 { Some(low_hz) } else { None };
     let high_opt = if high_hz > 0.0 { Some(high_hz) } else { None };
-    let clean_ts = simultaneous_denoise(
+    let mode_enum = CensorMode::from_str_opt(censor_mode.as_deref());
+    let denoise_res = simultaneous_denoise_with_mode(
         parc.timeseries.view(),
         combined_conf.as_ref().map(|c| c.view()),
         tr_sec,
         low_opt,
         high_opt,
         &scrub_indices,
+        mode_enum,
         true,
     )?;
+    let clean_ts = denoise_res.clean_ts;
+    let n_regressors = denoise_res.n_regressors as u32;
+    let dof_remaining = denoise_res.dof_remaining as u32;
+    let censor_mode_label = mode_enum.as_str().to_string();
 
     let fc = static_fc_pearson(clean_ts.view())?;
     let (clean_fc_hist, clean_fc_mean, clean_fc_sd) = compute_fc_histogram(fc.view(), 41);
@@ -959,6 +1116,11 @@ pub fn run_lesion_aware_pipeline(
     let net_gcmi_flat = aggregate_network_matrix(fc_gcmi.view(), &roi_network_indices, k);
     let net_te_flat = aggregate_network_matrix(fc_te.view(), &roi_network_indices, k);
 
+    let te_asym = compute_te_net_asymmetry_matrix(fc_te.view());
+    let te_net_preview_rgba = render_diverging_matrix_rgba(te_asym.view());
+    let net_te_asym_flat = aggregate_network_matrix(te_asym.view(), &roi_network_indices, k);
+    let net_te_out_minus_in = compute_net_te_out_minus_in(&net_te_flat, k);
+
     let (fc_preview_size, fc_preview_rgba) = render_fc_matrix_rgba(fc.view());
     let (_, partial_preview_rgba) = render_fc_matrix_rgba(fc_partial.view());
     let gcmi_preview_rgba = render_nonneg_matrix_rgba(fc_gcmi.view());
@@ -984,6 +1146,9 @@ pub fn run_lesion_aware_pipeline(
                 "fd_threshold_mm": fd_threshold_mm,
                 "mean_fd_mm": mean_fd_mm,
                 "pct_scrubbed": pct_scrubbed,
+                "censor_mode": censor_mode_label,
+                "n_regressors": n_regressors,
+                "dof_remaining": dof_remaining,
                 "raw_fc_mean": raw_fc_mean,
                 "raw_fc_sd": raw_fc_sd,
                 "clean_fc_mean": clean_fc_mean,
@@ -1010,7 +1175,7 @@ pub fn run_lesion_aware_pipeline(
                 | **Timepoints / TR** | {nt} volumes @ {tr_sec:.2} s |\n\
                 | **Intact / Total ROIs** | {}/{} (Excluded: {}) |\n\
                 | **CONN QC (Raw FC -> Clean FC)** | {raw_fc_mean:.3} ± {raw_fc_sd:.3} → {clean_fc_mean:.3} ± {clean_fc_sd:.3} |\n\
-                | **Mean FD / Scrubbed** | {mean_fd_mm:.3} mm / {pct_scrubbed:.1}% |\n\
+                | **Mean FD / Scrubbed** | {mean_fd_mm:.3} mm / {pct_scrubbed:.1}% ({censor_mode_label}, DOF: {dof_remaining}/{nt}) |\n\
                 | **Lesion Volume** | {:.2} mL ({dominant_hemi}) |\n\
                 | **Mean \\|Pearson FC\\|** | {mean_abs_fc:.4} |\n\
                 | **Mean \\|Partial FC\\| (Ledoit-Wolf)** | {mean_abs_partial_fc:.4} |\n\
@@ -1055,6 +1220,8 @@ pub fn run_lesion_aware_pipeline(
             raw_ts: parc.timeseries,
             clean_ts,
             tr_sec,
+            bandpass_low_hz: low_hz,
+            bandpass_high_hz: high_hz,
             roi_labels: roi_labels.clone(),
             network_names: network_names.clone(),
             roi_network_indices: roi_network_indices.clone(),
@@ -1113,6 +1280,12 @@ pub fn run_lesion_aware_pipeline(
         net_partial_flat,
         net_gcmi_flat,
         net_te_flat,
+        censor_mode: censor_mode_label,
+        n_regressors,
+        dof_remaining,
+        te_net_preview_rgba,
+        net_te_asym_flat,
+        net_te_out_minus_in,
     })
 }
 
@@ -1125,6 +1298,35 @@ fn zscore_f32(vals: &[f64]) -> Vec<f32> {
     let var = vals.iter().map(|&v| (v - mean) * (v - mean)).sum::<f64>() / (n as f64);
     let sd = var.sqrt().max(1e-9);
     vals.iter().map(|&v| ((v - mean) / sd) as f32).collect()
+}
+
+fn robust_zscore_f32(vals: &[f64]) -> Vec<f32> {
+    let n = vals.len();
+    if n == 0 || vals.iter().any(|v| !v.is_finite()) {
+        return vec![0.0; n];
+    }
+    let mut sorted = vals.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let med = if n % 2 == 1 {
+        sorted[n / 2]
+    } else {
+        0.5 * (sorted[n / 2 - 1] + sorted[n / 2])
+    };
+    let mut abs_dev: Vec<f64> = vals.iter().map(|&v| (v - med).abs()).collect();
+    abs_dev.sort_by(|a, b| a.total_cmp(b));
+    let mad = if n % 2 == 1 {
+        abs_dev[n / 2]
+    } else {
+        0.5 * (abs_dev[n / 2 - 1] + abs_dev[n / 2])
+    };
+    let sigma = (1.4826 * mad).max(0.0);
+    if sigma > 1e-6 {
+        return vals
+            .iter()
+            .map(|&v| (((v - med) / sigma).clamp(-6.0, 6.0)) as f32)
+            .collect();
+    }
+    zscore_f32(vals)
 }
 
 pub fn get_roi_timeseries_detail(roi_indices: Vec<u32>) -> Result<RoiTimeseriesDetailDto> {
@@ -1172,9 +1374,10 @@ pub fn get_roi_timeseries_detail(roi_indices: Vec<u32>) -> Result<RoiTimeseriesD
             0.0
         };
 
-        let raw_z = zscore_f32(&raw_col);
+        let raw_z = robust_zscore_f32(&raw_col);
         let clean_z = zscore_f32(&clean_col);
-        let raw_centered_f64: Vec<f64> = raw_z.iter().map(|&v| v as f64).collect();
+        let raw_std_z = zscore_f32(&raw_col);
+        let raw_centered_f64: Vec<f64> = raw_std_z.iter().map(|&v| v as f64).collect();
         let clean_centered_f64: Vec<f64> = clean_z.iter().map(|&v| v as f64).collect();
         let (freqs, r_psd) = welch_psd(&raw_centered_f64, fs, nperseg);
         let (_, c_psd) = welch_psd(&clean_centered_f64, fs, nperseg);
@@ -1297,13 +1500,16 @@ pub fn compute_cached_dynamics(
         .as_ref()
         .context("Run denoising in Step 4 before computing dynamics")?;
 
-    let rows = compute_sliding_dynamics(
+    let skip_bandpass = (low_hz - sess.bandpass_low_hz).abs() < 1e-3
+        && (high_hz - sess.bandpass_high_hz).abs() < 1e-3;
+    let rows = compute_sliding_dynamics_opt(
         sess.clean_ts.view(),
         sess.tr_sec,
         (window_len as usize).max(16),
         (step as usize).max(1),
         low_hz,
         high_hz,
+        skip_bandpass,
     )?;
 
     fn avg(vals: &[f64]) -> (f64, f64) {
@@ -1326,6 +1532,27 @@ pub fn compute_cached_dynamics(
     let (medf_m, _) = avg(&intact_rows.iter().map(|r| r.med_f_mean).collect::<Vec<_>>());
     let (se_m, _) = avg(&intact_rows.iter().map(|r| r.se_mean).collect::<Vec<_>>());
     let (ple_m, _) = avg(&intact_rows.iter().map(|r| r.ple_mean).collect::<Vec<_>>());
+
+    let intact_groups: Vec<usize> = intact_rows
+        .iter()
+        .map(|r| *sess.roi_network_indices.get(r.roi_index).unwrap_or(&0))
+        .collect();
+    let (anova_f_acw0, anova_p_acw0) = one_way_anova_by_group(
+        &intact_rows.iter().map(|r| r.acw0_mean).collect::<Vec<_>>(),
+        &intact_groups,
+    );
+    let (anova_f_lzc, anova_p_lzc) = one_way_anova_by_group(
+        &intact_rows.iter().map(|r| r.lzc_mean).collect::<Vec<_>>(),
+        &intact_groups,
+    );
+    let (anova_f_sampen, anova_p_sampen) = one_way_anova_by_group(
+        &intact_rows.iter().map(|r| r.sampen_mean).collect::<Vec<_>>(),
+        &intact_groups,
+    );
+    let (anova_f_ple, anova_p_ple) = one_way_anova_by_group(
+        &intact_rows.iter().map(|r| r.ple_mean).collect::<Vec<_>>(),
+        &intact_groups,
+    );
 
     let mut net_summaries = Vec::with_capacity(sess.network_names.len());
     for (net_idx, net_name) in sess.network_names.iter().enumerate() {
@@ -1428,5 +1655,160 @@ pub fn compute_cached_dynamics(
         ple_mean: ple_m,
         networks: net_summaries,
         exported_csv_path,
+        anova_f_acw0,
+        anova_p_acw0,
+        anova_f_lzc,
+        anova_p_lzc,
+        anova_f_sampen,
+        anova_p_sampen,
+        anova_f_ple,
+        anova_p_ple,
+    })
+}
+
+pub fn compute_graph_theory(
+    metric: String,
+    density: f64,
+    weighted: bool,
+    export_dir: Option<String>,
+) -> Result<GraphTheorySummaryDto> {
+    let guard = session_lock()
+        .read()
+        .map_err(|_| anyhow::anyhow!("Session cache read lock poisoned"))?;
+    let sess = guard
+        .as_ref()
+        .context("Run denoising in Step 4 before computing Graph Theory metrics")?;
+
+    let mode = metric.trim().to_ascii_lowercase();
+    let mat_view = match mode.as_str() {
+        "partial" => sess.fc_partial.view(),
+        "gcmi" => sess.fc_gcmi.view(),
+        "te" | "te_out" => sess.fc_te.view(),
+        _ => sess.fc_pearson.view(),
+    };
+
+    let res = compute_full_graph_theory(mat_view, &sess.roi_network_indices, density, weighted)?;
+
+    let nodal: Vec<NodalGraphDto> = res
+        .nodal
+        .into_iter()
+        .map(|nr| {
+            let net_name = sess
+                .roi_network_indices
+                .get(nr.roi_index)
+                .and_then(|&ni| sess.network_names.get(ni))
+                .cloned()
+                .unwrap_or_else(|| "Other".to_string());
+            NodalGraphDto {
+                roi_index: nr.roi_index as u32,
+                label: sess
+                    .roi_labels
+                    .get(nr.roi_index)
+                    .cloned()
+                    .unwrap_or_else(|| format!("ROI_{:03}", nr.roi_index + 1)),
+                network: net_name,
+                degree: nr.degree as u32,
+                strength: nr.strength,
+                clustering: nr.clustering,
+                local_efficiency: nr.local_efficiency,
+                betweenness: nr.betweenness,
+                participation_coeff: nr.participation_coeff,
+                within_module_z: nr.within_module_z,
+            }
+        })
+        .collect();
+
+    let sweep: Vec<DensitySweepDto> = res
+        .sweep
+        .into_iter()
+        .map(|sp| DensitySweepDto {
+            density: sp.density,
+            global_efficiency: sp.global_efficiency,
+            clustering_coeff: sp.clustering_coeff,
+            small_worldness: sp.small_worldness,
+            modularity_q: sp.modularity_q,
+        })
+        .collect();
+
+    let (exported_csv_path, exported_json_path) = match export_dir {
+        Some(ref dir) if !dir.trim().is_empty() => {
+            let p = Path::new(dir.trim());
+            std::fs::create_dir_all(p)?;
+            let csv_path = p.join("graph_metrics_nodal.csv");
+            let json_path = p.join("graph_metrics_global.json");
+
+            let f = std::fs::File::create(&csv_path)?;
+            let mut w = BufWriter::new(f);
+            writeln!(
+                w,
+                "roi_index,label,network,degree,strength,clustering,local_efficiency,betweenness,participation_coeff,within_module_z"
+            )?;
+            for nr in &nodal {
+                writeln!(
+                    w,
+                    "{},{},{},{},{:.5},{:.5},{:.5},{:.6},{:.5},{:.5}",
+                    nr.roi_index,
+                    nr.label,
+                    nr.network,
+                    nr.degree,
+                    nr.strength,
+                    nr.clustering,
+                    nr.local_efficiency,
+                    nr.betweenness,
+                    nr.participation_coeff,
+                    nr.within_module_z,
+                )?;
+            }
+            w.flush()?;
+
+            let global_json = serde_json::json!({
+                "metric": mode,
+                "density": res.density,
+                "weighted": res.weighted,
+                "n_intact_nodes": res.n_intact_nodes,
+                "n_excluded_nodes": res.n_excluded_nodes,
+                "n_edges": res.n_edges,
+                "global_efficiency": res.global_efficiency,
+                "mean_local_efficiency": res.mean_local_efficiency,
+                "clustering_coeff": res.clustering_coeff,
+                "char_path_length": res.char_path_length,
+                "small_worldness": res.small_worldness,
+                "modularity_q": res.modularity_q,
+                "assortativity": res.assortativity,
+                "sweep": sweep.iter().map(|s| serde_json::json!({
+                    "density": s.density,
+                    "global_efficiency": s.global_efficiency,
+                    "clustering_coeff": s.clustering_coeff,
+                    "small_worldness": s.small_worldness,
+                    "modularity_q": s.modularity_q,
+                })).collect::<Vec<_>>(),
+            });
+            std::fs::write(&json_path, serde_json::to_string_pretty(&global_json)?)?;
+            (
+                Some(csv_path.display().to_string()),
+                Some(json_path.display().to_string()),
+            )
+        }
+        _ => (None, None),
+    };
+
+    Ok(GraphTheorySummaryDto {
+        metric: mode,
+        density: res.density,
+        weighted: res.weighted,
+        n_intact_nodes: res.n_intact_nodes as u32,
+        n_excluded_nodes: res.n_excluded_nodes as u32,
+        n_edges: res.n_edges as u32,
+        global_efficiency: res.global_efficiency,
+        mean_local_efficiency: res.mean_local_efficiency,
+        clustering_coeff: res.clustering_coeff,
+        char_path_length: res.char_path_length,
+        small_worldness: res.small_worldness,
+        modularity_q: res.modularity_q,
+        assortativity: res.assortativity,
+        nodal,
+        sweep,
+        exported_csv_path,
+        exported_json_path,
     })
 }

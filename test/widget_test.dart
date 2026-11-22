@@ -240,6 +240,12 @@ void main() {
       netPartialFlat: Float32List.fromList(List.filled(16, 0.1)),
       netGcmiFlat: Float32List.fromList(List.filled(16, 0.05)),
       netTeFlat: Float32List.fromList(List.filled(16, 0.02)),
+      censorMode: 'interpolate',
+      nRegressors: 40,
+      dofRemaining: 80,
+      teNetPreviewRgba: Uint8List(4 * 4 * 4),
+      netTeAsymFlat: Float32List.fromList(List.filled(16, 0.01)),
+      netTeOutMinusIn: Float32List.fromList([0.02, -0.01, 0.01, -0.02]),
     );
 
     await tester.pumpWidget(
@@ -268,11 +274,14 @@ void main() {
     await tester.pump();
 
     expect(find.text('Denoising QC (CONN)'), findsOneWidget);
+    expect(find.text('Effective DOF'), findsOneWidget);
     expect(find.text('CONN FC Value Distribution (Before vs After Denoising)'), findsOneWidget);
     expect(find.text('Head Motion & Scrubbing (Framewise Displacement)'), findsOneWidget);
     expect(find.text('ROI Timeseries'), findsOneWidget);
     expect(find.text('Connectivity & Connectome'), findsOneWidget);
     expect(find.text('Timeseries Dynamics'), findsOneWidget);
+    expect(find.text('Graph Theory'), findsOneWidget);
+    expect(find.text('Stats (Nilearn)'), findsOneWidget);
     expect(find.text('Summary & Export'), findsOneWidget);
 
     await tester.tap(find.text('Connectivity & Connectome'));
@@ -281,6 +290,19 @@ void main() {
     expect(find.text('Partial (Ledoit-Wolf)'), findsOneWidget);
     expect(find.text('GCMI (bits)'), findsOneWidget);
     expect(find.text('Transfer Entropy (→)'), findsOneWidget);
+    await tester.tap(find.text('Transfer Entropy (→)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Net Flow (i→j − j→i)'), findsOneWidget);
+    expect(find.text('Net Directed Information Flow (Out-TE − In-TE per Network)'), findsOneWidget);
+
+    await tester.tap(find.text('Graph Theory'));
+    await tester.pumpAndSettle();
+    expect(find.text('Complex Network & Graph Theory (Rayon Parallel Rust)'), findsOneWidget);
+
+    await tester.tap(find.text('Stats (Nilearn)'));
+    await tester.pumpAndSettle();
+    expect(find.text('Single-Subject Seed-to-Voxel GLM & Nilearn Glass Brain Mapping'), findsOneWidget);
+    expect(find.text('Group / Batch Statistical Analysis (FDR + NBS + Tangent Decoding + LMM)'), findsOneWidget);
 
     await tester.tap(find.text('Summary & Export'));
     await tester.pumpAndSettle();

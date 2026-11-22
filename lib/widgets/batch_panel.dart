@@ -214,6 +214,7 @@ class _BatchPanelState extends State<BatchPanel> {
         },
       );
       _summaryCsvPath = '$outDir${Platform.pathSeparator}batch_summary.csv';
+      widget.session.lastBatchSummaryCsvPath = _summaryCsvPath!;
     } finally {
       _timer?.cancel();
       _timer = null;

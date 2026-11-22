@@ -127,6 +127,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   ui.Image? _partialImage;
   ui.Image? _gcmiImage;
   ui.Image? _teImage;
+  ui.Image? _teNetImage;
   ui.Image? _rawCarpetImage;
   ui.Image? _carpetImage;
   String _plane = 'axial';
@@ -138,6 +139,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   double _highHz = 0.09;
   double _fdThresholdMm = 0.5;
   double _maxDamagePct = 50.0;
+  String _censorMode = 'interpolate';
 
   @override
   void initState() {
@@ -248,6 +250,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     _partialImage?.dispose();
     _gcmiImage?.dispose();
     _teImage?.dispose();
+    _teNetImage?.dispose();
     _rawCarpetImage?.dispose();
     _carpetImage?.dispose();
     super.dispose();
@@ -602,6 +605,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         fdThresholdMm: _fdThresholdMm,
         maxDamagePct: _maxDamagePct,
         lesionDilateVoxels: 1,
+        censorMode: _censorMode,
         outDir: outDir,
       );
 
@@ -630,6 +634,11 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         summary.fcPreviewSize,
         summary.fcPreviewSize,
       );
+      final teNetImg = await tryDecode(
+        summary.teNetPreviewRgba,
+        summary.fcPreviewSize,
+        summary.fcPreviewSize,
+      );
       final rawCarpetImg = await tryDecode(
         summary.rawCarpetRgba,
         summary.carpetWidth,
@@ -645,6 +654,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         partialImg?.dispose();
         gcmiImg?.dispose();
         teImg?.dispose();
+        teNetImg?.dispose();
         rawCarpetImg?.dispose();
         carpetImg?.dispose();
         return;
@@ -660,6 +670,8 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
         _gcmiImage = gcmiImg;
         _teImage?.dispose();
         _teImage = teImg;
+        _teNetImage?.dispose();
+        _teNetImage = teNetImg;
         _rawCarpetImage?.dispose();
         _rawCarpetImage = rawCarpetImg;
         _carpetImage?.dispose();
@@ -743,6 +755,8 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       _gcmiImage = null;
       _teImage?.dispose();
       _teImage = null;
+      _teNetImage?.dispose();
+      _teNetImage = null;
       _rawCarpetImage?.dispose();
       _rawCarpetImage = null;
       _carpetImage?.dispose();
@@ -2143,6 +2157,36 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                                 setState(() => _fdThresholdMm = v),
                           ),
                         ),
+                        const SizedBox(height: 6),
+                        DropdownButtonFormField<String>(
+                          initialValue: _censorMode,
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Motion Scrubbing Mode',
+                            helperText:
+                                'Linear Interpolate prevents flat-zero segments and low-DOF artifacts on high-motion scans.',
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'interpolate',
+                              child: Text('Linear Interpolate (CONN Default)'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'spike',
+                              child: Text('Spike Regressors (Zero-Out)'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'none',
+                              child: Text('No Scrubbing'),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) setState(() => _censorMode = v);
+                          },
+                        ),
+                        const SizedBox(height: 10),
                         _buildSliderRow(
                           title: 'Max ROI Lesion Damage Exclusion',
                           valueLabel: lesionActive
@@ -2168,6 +2212,30 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                           ),
                         ),
                         if (_pipelineSummary != null) ...[
+                          if (_pipelineSummary!.dofRemaining < 50 ||
+                              _pipelineSummary!.pctScrubbed > 20.0) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF451A03),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: const Color(0xFFF59E0B),
+                                ),
+                              ),
+                              child: Text(
+                                'Motion/DOF QC Notice: ${_pipelineSummary!.pctScrubbed.toStringAsFixed(1)}% volumes flagged '
+                                '(mode: ${_pipelineSummary!.censorMode}) • Effective DOF remaining: '
+                                '${_pipelineSummary!.dofRemaining} / ${_pipelineSummary!.nTimepoints} '
+                                '(${_pipelineSummary!.nRegressors} regressors).',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFFFDE68A),
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 10),
                           OutlinedButton.icon(
                             onPressed: () => setState(() => _stepIndex = 4),
@@ -2377,8 +2445,14 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       partialImage: _partialImage,
       gcmiImage: _gcmiImage,
       teImage: _teImage,
+      teNetImage: _teNetImage,
       rawCarpetImage: _rawCarpetImage,
       cleanCarpetImage: _carpetImage,
+      boldMniPath: _boldMniCtrl.text.trim(),
+      labelsJsonPath: _labelsCtrl.text.trim(),
+      initialBatchCsvPath: _session.lastBatchSummaryCsvPath,
+      onRunSidecarModule: (module, args, onLog) =>
+          _session.runSidecarModule(module: module, args: args, onLog: onLog),
       onGoStep4: () => setState(() => _stepIndex = 3),
       onOpenResultsFolder: _openDirectoryInOs,
       onSaveReportAs: _saveReportAs,

@@ -2,6 +2,26 @@
 
 All notable changes to **CCS_fMRIStudio** are documented in this file.
 
+## [0.4.0] - 2026-11-22
+
+### Added
+- **Pure-Rust Graph Theory Engine (`rust/src/graph_theory.rs`, `compute_graph_theory`, `5. Results → Graph Theory`)**:
+  - Computes NaN-safe Weighted & Binary network topology across Pearson, Partial, GCMI, or Transfer Entropy matrices with proportional density thresholding (`5%–50%`): **Global Efficiency**, **Local Efficiency**, **Onnela Clustering Coefficient ($C$)**, **Characteristic Path Length ($L$)**, **Maslov-Sneppen Small-Worldness ($\sigma$)**, **Newman Modularity ($Q$)**, **Assortativity ($r$)**, **Brandes Betweenness Centrality**, **Guimerà-Amaral Participation Coefficient ($P_i$)**, and **Within-Module Degree $z$-score ($z_i$)**.
+  - Interactive **Density Sweep (5%–40%)** curve, **Hub Classification Scatter Plot ($P_i$ vs $z_i$)**, ranked Top-15 Nodal Hubs table, and automatic `graph_metrics_nodal.csv` + `graph_metrics_global.json` export.
+- **Advanced Nilearn Statistical Inference (`python_sidecar/src/ccs_fmri_sidecar/nilearn_stats.py`, `5. Results → Stats (Nilearn)`)**:
+  - **Single-Subject Seed-to-Voxel GLM (`--mode seed-glm`)**: Regresses any atlas ROI onto 4D MNI BOLD voxels, computes Fisher-$z$ statistical maps, applies Nilearn BH-FDR / Bonferroni thresholding, extracts MNI cluster tables, and renders dark-theme `plot_glass_brain` and `plot_stat_map` figures inline in Flutter.
+  - **Group / Batch Connectivity Statistics (`--mode group`)**: Runs mass-univariate edgewise two-sample/paired $t$-tests with BH-FDR, **Network-Based Statistic (NBS)** permutation cluster tests, Log-Euclidean Tangent-Space cross-validated decoding, and `statsmodels.MixedLM` linear mixed-effects modeling directly on `batch_summary.csv`.
+- **Net Directed Transfer Entropy Flow (`compute_te_net_asymmetry_matrix`)**:
+  - Added **Net Flow (`TE i→j − TE j→i`)** toggle, non-overlapping mid-arc directional chevron arrowheads at `t = 0.60` in the Circular Connectome, and a diverging **Net Information Flow (`Out-TE − In-TE`)** bar chart separating Net Senders vs Net Receivers.
+- **Inter-Network Dynamics One-Way ANOVA (`one_way_anova_by_group`)**:
+  - Added exact $F$-statistics and $p$-values across Yeo-7 networks alongside zoomed Y-axis scaling and bar value labels so unimodal-to-transmodal gradients are clearly visible.
+
+### Fixed
+- **CONN-Style Linear-Interpolation Motion Censoring (`rust/src/denoise.rs`)**:
+  - Replaced default simultaneous spike zero-out with Power et al. (2014) **intact-frame nuisance regression + linear interpolation across scrubbed frames** prior to DCT bandpass filtering (`CensorMode::Interpolate`), eliminating flat-zero censored plateaus, passband ringing, and low-DOF blow-up on high-motion scans while exposing explicit **Effective DOF remaining** and **Motion/DOF QC warnings**.
+  - Switched Raw BOLD trace visualization in ROI Explorer to **robust median/MAD scaling** so large single-volume motion spikes no longer squash the visual scale of surviving neural oscillations.
+  - Eliminated redundant full-band DCT double-filtering in `compute_sliding_dynamics_opt` when analyzing the primary resting-state band.
+
 ## [0.3.0] - 2026-11-22
 
 ### Added

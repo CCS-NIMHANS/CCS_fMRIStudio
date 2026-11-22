@@ -6,7 +6,7 @@
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `aggregate_network_matrix`, `build_roi_and_network_metadata`, `export_lesion_pipeline_outputs`, `extract_network_name`, `lerp_u8`, `load_or_init_mask`, `mean_off_diag`, `render_carpet_rgba`, `render_fc_matrix_rgba`, `render_nonneg_matrix_rgba`, `session_lock`, `to_lesion_dto`, `write_matrix_csv`, `zscore_f32`
+// These functions are ignored because they are not marked as `pub`: `aggregate_network_matrix`, `build_roi_and_network_metadata`, `compute_net_te_out_minus_in`, `compute_te_net_asymmetry_matrix`, `export_lesion_pipeline_outputs`, `extract_network_name`, `lerp_u8`, `load_or_init_mask`, `mean_off_diag`, `render_carpet_rgba`, `render_diverging_matrix_rgba`, `render_fc_matrix_rgba`, `render_nonneg_matrix_rgba`, `robust_zscore_f32`, `session_lock`, `to_lesion_dto`, `write_matrix_csv`, `zscore_f32`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `CachedSession`
 
 Future<EngineInfo> engineInfo() => RustLib.instance.api.crateApiEngineInfo();
@@ -141,6 +141,7 @@ Future<LesionPipelineSummary> runLesionAwarePipeline({
   required double fdThresholdMm,
   required double maxDamagePct,
   required int lesionDilateVoxels,
+  String? censorMode,
   String? outDir,
 }) => RustLib.instance.api.crateApiRunLesionAwarePipeline(
   boldPath: boldPath,
@@ -155,6 +156,7 @@ Future<LesionPipelineSummary> runLesionAwarePipeline({
   fdThresholdMm: fdThresholdMm,
   maxDamagePct: maxDamagePct,
   lesionDilateVoxels: lesionDilateVoxels,
+  censorMode: censorMode,
   outDir: outDir,
 );
 
@@ -180,6 +182,18 @@ Future<DynamicsSummaryDto> computeCachedDynamics({
   lowHz: lowHz,
   highHz: highHz,
   outDir: outDir,
+);
+
+Future<GraphTheorySummaryDto> computeGraphTheory({
+  required String metric,
+  required double density,
+  required bool weighted,
+  String? exportDir,
+}) => RustLib.instance.api.crateApiComputeGraphTheory(
+  metric: metric,
+  density: density,
+  weighted: weighted,
+  exportDir: exportDir,
 );
 
 class DenoisePipelineSummary {
@@ -241,6 +255,41 @@ class DenoisePipelineSummary {
           meanAbsFc == other.meanAbsFc;
 }
 
+class DensitySweepDto {
+  final double density;
+  final double globalEfficiency;
+  final double clusteringCoeff;
+  final double smallWorldness;
+  final double modularityQ;
+
+  const DensitySweepDto({
+    required this.density,
+    required this.globalEfficiency,
+    required this.clusteringCoeff,
+    required this.smallWorldness,
+    required this.modularityQ,
+  });
+
+  @override
+  int get hashCode =>
+      density.hashCode ^
+      globalEfficiency.hashCode ^
+      clusteringCoeff.hashCode ^
+      smallWorldness.hashCode ^
+      modularityQ.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DensitySweepDto &&
+          runtimeType == other.runtimeType &&
+          density == other.density &&
+          globalEfficiency == other.globalEfficiency &&
+          clusteringCoeff == other.clusteringCoeff &&
+          smallWorldness == other.smallWorldness &&
+          modularityQ == other.modularityQ;
+}
+
 class DynamicsSummaryDto {
   final int nIntactRois;
   final double lowHz;
@@ -258,6 +307,14 @@ class DynamicsSummaryDto {
   final double pleMean;
   final List<NetworkDynamicsDto> networks;
   final String? exportedCsvPath;
+  final double anovaFAcw0;
+  final double anovaPAcw0;
+  final double anovaFLzc;
+  final double anovaPLzc;
+  final double anovaFSampen;
+  final double anovaPSampen;
+  final double anovaFPle;
+  final double anovaPPle;
 
   const DynamicsSummaryDto({
     required this.nIntactRois,
@@ -276,6 +333,14 @@ class DynamicsSummaryDto {
     required this.pleMean,
     required this.networks,
     this.exportedCsvPath,
+    required this.anovaFAcw0,
+    required this.anovaPAcw0,
+    required this.anovaFLzc,
+    required this.anovaPLzc,
+    required this.anovaFSampen,
+    required this.anovaPSampen,
+    required this.anovaFPle,
+    required this.anovaPPle,
   });
 
   @override
@@ -295,7 +360,15 @@ class DynamicsSummaryDto {
       seMean.hashCode ^
       pleMean.hashCode ^
       networks.hashCode ^
-      exportedCsvPath.hashCode;
+      exportedCsvPath.hashCode ^
+      anovaFAcw0.hashCode ^
+      anovaPAcw0.hashCode ^
+      anovaFLzc.hashCode ^
+      anovaPLzc.hashCode ^
+      anovaFSampen.hashCode ^
+      anovaPSampen.hashCode ^
+      anovaFPle.hashCode ^
+      anovaPPle.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -317,7 +390,15 @@ class DynamicsSummaryDto {
           seMean == other.seMean &&
           pleMean == other.pleMean &&
           networks == other.networks &&
-          exportedCsvPath == other.exportedCsvPath;
+          exportedCsvPath == other.exportedCsvPath &&
+          anovaFAcw0 == other.anovaFAcw0 &&
+          anovaPAcw0 == other.anovaPAcw0 &&
+          anovaFLzc == other.anovaFLzc &&
+          anovaPLzc == other.anovaPLzc &&
+          anovaFSampen == other.anovaFSampen &&
+          anovaPSampen == other.anovaPSampen &&
+          anovaFPle == other.anovaFPle &&
+          anovaPPle == other.anovaPPle;
 }
 
 class EngineInfo {
@@ -342,6 +423,89 @@ class EngineInfo {
           name == other.name &&
           version == other.version &&
           simdThreads == other.simdThreads;
+}
+
+class GraphTheorySummaryDto {
+  final String metric;
+  final double density;
+  final bool weighted;
+  final int nIntactNodes;
+  final int nExcludedNodes;
+  final int nEdges;
+  final double globalEfficiency;
+  final double meanLocalEfficiency;
+  final double clusteringCoeff;
+  final double charPathLength;
+  final double smallWorldness;
+  final double modularityQ;
+  final double assortativity;
+  final List<NodalGraphDto> nodal;
+  final List<DensitySweepDto> sweep;
+  final String? exportedCsvPath;
+  final String? exportedJsonPath;
+
+  const GraphTheorySummaryDto({
+    required this.metric,
+    required this.density,
+    required this.weighted,
+    required this.nIntactNodes,
+    required this.nExcludedNodes,
+    required this.nEdges,
+    required this.globalEfficiency,
+    required this.meanLocalEfficiency,
+    required this.clusteringCoeff,
+    required this.charPathLength,
+    required this.smallWorldness,
+    required this.modularityQ,
+    required this.assortativity,
+    required this.nodal,
+    required this.sweep,
+    this.exportedCsvPath,
+    this.exportedJsonPath,
+  });
+
+  @override
+  int get hashCode =>
+      metric.hashCode ^
+      density.hashCode ^
+      weighted.hashCode ^
+      nIntactNodes.hashCode ^
+      nExcludedNodes.hashCode ^
+      nEdges.hashCode ^
+      globalEfficiency.hashCode ^
+      meanLocalEfficiency.hashCode ^
+      clusteringCoeff.hashCode ^
+      charPathLength.hashCode ^
+      smallWorldness.hashCode ^
+      modularityQ.hashCode ^
+      assortativity.hashCode ^
+      nodal.hashCode ^
+      sweep.hashCode ^
+      exportedCsvPath.hashCode ^
+      exportedJsonPath.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GraphTheorySummaryDto &&
+          runtimeType == other.runtimeType &&
+          metric == other.metric &&
+          density == other.density &&
+          weighted == other.weighted &&
+          nIntactNodes == other.nIntactNodes &&
+          nExcludedNodes == other.nExcludedNodes &&
+          nEdges == other.nEdges &&
+          globalEfficiency == other.globalEfficiency &&
+          meanLocalEfficiency == other.meanLocalEfficiency &&
+          clusteringCoeff == other.clusteringCoeff &&
+          charPathLength == other.charPathLength &&
+          smallWorldness == other.smallWorldness &&
+          modularityQ == other.modularityQ &&
+          assortativity == other.assortativity &&
+          nodal == other.nodal &&
+          sweep == other.sweep &&
+          exportedCsvPath == other.exportedCsvPath &&
+          exportedJsonPath == other.exportedJsonPath;
 }
 
 class LesionPipelineSummary {
@@ -390,6 +554,12 @@ class LesionPipelineSummary {
   final Float32List netPartialFlat;
   final Float32List netGcmiFlat;
   final Float32List netTeFlat;
+  final String censorMode;
+  final int nRegressors;
+  final int dofRemaining;
+  final Uint8List teNetPreviewRgba;
+  final Float32List netTeAsymFlat;
+  final Float32List netTeOutMinusIn;
 
   const LesionPipelineSummary({
     required this.nTimepoints,
@@ -437,6 +607,12 @@ class LesionPipelineSummary {
     required this.netPartialFlat,
     required this.netGcmiFlat,
     required this.netTeFlat,
+    required this.censorMode,
+    required this.nRegressors,
+    required this.dofRemaining,
+    required this.teNetPreviewRgba,
+    required this.netTeAsymFlat,
+    required this.netTeOutMinusIn,
   });
 
   @override
@@ -485,7 +661,13 @@ class LesionPipelineSummary {
       netPearsonFlat.hashCode ^
       netPartialFlat.hashCode ^
       netGcmiFlat.hashCode ^
-      netTeFlat.hashCode;
+      netTeFlat.hashCode ^
+      censorMode.hashCode ^
+      nRegressors.hashCode ^
+      dofRemaining.hashCode ^
+      teNetPreviewRgba.hashCode ^
+      netTeAsymFlat.hashCode ^
+      netTeOutMinusIn.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -536,7 +718,13 @@ class LesionPipelineSummary {
           netPearsonFlat == other.netPearsonFlat &&
           netPartialFlat == other.netPartialFlat &&
           netGcmiFlat == other.netGcmiFlat &&
-          netTeFlat == other.netTeFlat;
+          netTeFlat == other.netTeFlat &&
+          censorMode == other.censorMode &&
+          nRegressors == other.nRegressors &&
+          dofRemaining == other.dofRemaining &&
+          teNetPreviewRgba == other.teNetPreviewRgba &&
+          netTeAsymFlat == other.netTeAsymFlat &&
+          netTeOutMinusIn == other.netTeOutMinusIn;
 }
 
 class LesionSummaryDto {
@@ -686,6 +874,61 @@ class NiftiHeaderSummary {
           trSec == other.trSec &&
           datatypeCode == other.datatypeCode &&
           affineFlat == other.affineFlat;
+}
+
+class NodalGraphDto {
+  final int roiIndex;
+  final String label;
+  final String network;
+  final int degree;
+  final double strength;
+  final double clustering;
+  final double localEfficiency;
+  final double betweenness;
+  final double participationCoeff;
+  final double withinModuleZ;
+
+  const NodalGraphDto({
+    required this.roiIndex,
+    required this.label,
+    required this.network,
+    required this.degree,
+    required this.strength,
+    required this.clustering,
+    required this.localEfficiency,
+    required this.betweenness,
+    required this.participationCoeff,
+    required this.withinModuleZ,
+  });
+
+  @override
+  int get hashCode =>
+      roiIndex.hashCode ^
+      label.hashCode ^
+      network.hashCode ^
+      degree.hashCode ^
+      strength.hashCode ^
+      clustering.hashCode ^
+      localEfficiency.hashCode ^
+      betweenness.hashCode ^
+      participationCoeff.hashCode ^
+      withinModuleZ.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NodalGraphDto &&
+          runtimeType == other.runtimeType &&
+          roiIndex == other.roiIndex &&
+          label == other.label &&
+          network == other.network &&
+          degree == other.degree &&
+          strength == other.strength &&
+          clustering == other.clustering &&
+          localEfficiency == other.localEfficiency &&
+          betweenness == other.betweenness &&
+          participationCoeff == other.participationCoeff &&
+          withinModuleZ == other.withinModuleZ;
 }
 
 class PairwiseCouplingDto {

@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 575895238;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 448347433;
 
 // Section: executor
 
@@ -127,6 +127,49 @@ fn wire__crate__api__compute_cached_dynamics_impl(
                             api_low_hz,
                             api_high_hz,
                             api_out_dir,
+                        )?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__compute_graph_theory_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "compute_graph_theory",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_metric = <String>::sse_decode(&mut deserializer);
+            let api_density = <f64>::sse_decode(&mut deserializer);
+            let api_weighted = <bool>::sse_decode(&mut deserializer);
+            let api_export_dir = <Option<String>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok = crate::api::compute_graph_theory(
+                            api_metric,
+                            api_density,
+                            api_weighted,
+                            api_export_dir,
                         )?;
                         std::result::Result::Ok(output_ok)
                     })(),
@@ -544,6 +587,7 @@ fn wire__crate__api__run_lesion_aware_pipeline_impl(
             let api_fd_threshold_mm = <f64>::sse_decode(&mut deserializer);
             let api_max_damage_pct = <f64>::sse_decode(&mut deserializer);
             let api_lesion_dilate_voxels = <u32>::sse_decode(&mut deserializer);
+            let api_censor_mode = <Option<String>>::sse_decode(&mut deserializer);
             let api_out_dir = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
@@ -562,6 +606,7 @@ fn wire__crate__api__run_lesion_aware_pipeline_impl(
                             api_fd_threshold_mm,
                             api_max_damage_pct,
                             api_lesion_dilate_voxels,
+                            api_censor_mode,
                             api_out_dir,
                         )?;
                         std::result::Result::Ok(output_ok)
@@ -678,6 +723,24 @@ impl SseDecode for crate::api::DenoisePipelineSummary {
     }
 }
 
+impl SseDecode for crate::api::DensitySweepDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_density = <f64>::sse_decode(deserializer);
+        let mut var_globalEfficiency = <f64>::sse_decode(deserializer);
+        let mut var_clusteringCoeff = <f64>::sse_decode(deserializer);
+        let mut var_smallWorldness = <f64>::sse_decode(deserializer);
+        let mut var_modularityQ = <f64>::sse_decode(deserializer);
+        return crate::api::DensitySweepDto {
+            density: var_density,
+            global_efficiency: var_globalEfficiency,
+            clustering_coeff: var_clusteringCoeff,
+            small_worldness: var_smallWorldness,
+            modularity_q: var_modularityQ,
+        };
+    }
+}
+
 impl SseDecode for crate::api::DynamicsSummaryDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -697,6 +760,14 @@ impl SseDecode for crate::api::DynamicsSummaryDto {
         let mut var_pleMean = <f64>::sse_decode(deserializer);
         let mut var_networks = <Vec<crate::api::NetworkDynamicsDto>>::sse_decode(deserializer);
         let mut var_exportedCsvPath = <Option<String>>::sse_decode(deserializer);
+        let mut var_anovaFAcw0 = <f64>::sse_decode(deserializer);
+        let mut var_anovaPAcw0 = <f64>::sse_decode(deserializer);
+        let mut var_anovaFLzc = <f64>::sse_decode(deserializer);
+        let mut var_anovaPLzc = <f64>::sse_decode(deserializer);
+        let mut var_anovaFSampen = <f64>::sse_decode(deserializer);
+        let mut var_anovaPSampen = <f64>::sse_decode(deserializer);
+        let mut var_anovaFPle = <f64>::sse_decode(deserializer);
+        let mut var_anovaPPle = <f64>::sse_decode(deserializer);
         return crate::api::DynamicsSummaryDto {
             n_intact_rois: var_nIntactRois,
             low_hz: var_lowHz,
@@ -714,6 +785,14 @@ impl SseDecode for crate::api::DynamicsSummaryDto {
             ple_mean: var_pleMean,
             networks: var_networks,
             exported_csv_path: var_exportedCsvPath,
+            anova_f_acw0: var_anovaFAcw0,
+            anova_p_acw0: var_anovaPAcw0,
+            anova_f_lzc: var_anovaFLzc,
+            anova_p_lzc: var_anovaPLzc,
+            anova_f_sampen: var_anovaFSampen,
+            anova_p_sampen: var_anovaPSampen,
+            anova_f_ple: var_anovaFPle,
+            anova_p_ple: var_anovaPPle,
         };
     }
 }
@@ -743,6 +822,48 @@ impl SseDecode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_f64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for crate::api::GraphTheorySummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_metric = <String>::sse_decode(deserializer);
+        let mut var_density = <f64>::sse_decode(deserializer);
+        let mut var_weighted = <bool>::sse_decode(deserializer);
+        let mut var_nIntactNodes = <u32>::sse_decode(deserializer);
+        let mut var_nExcludedNodes = <u32>::sse_decode(deserializer);
+        let mut var_nEdges = <u32>::sse_decode(deserializer);
+        let mut var_globalEfficiency = <f64>::sse_decode(deserializer);
+        let mut var_meanLocalEfficiency = <f64>::sse_decode(deserializer);
+        let mut var_clusteringCoeff = <f64>::sse_decode(deserializer);
+        let mut var_charPathLength = <f64>::sse_decode(deserializer);
+        let mut var_smallWorldness = <f64>::sse_decode(deserializer);
+        let mut var_modularityQ = <f64>::sse_decode(deserializer);
+        let mut var_assortativity = <f64>::sse_decode(deserializer);
+        let mut var_nodal = <Vec<crate::api::NodalGraphDto>>::sse_decode(deserializer);
+        let mut var_sweep = <Vec<crate::api::DensitySweepDto>>::sse_decode(deserializer);
+        let mut var_exportedCsvPath = <Option<String>>::sse_decode(deserializer);
+        let mut var_exportedJsonPath = <Option<String>>::sse_decode(deserializer);
+        return crate::api::GraphTheorySummaryDto {
+            metric: var_metric,
+            density: var_density,
+            weighted: var_weighted,
+            n_intact_nodes: var_nIntactNodes,
+            n_excluded_nodes: var_nExcludedNodes,
+            n_edges: var_nEdges,
+            global_efficiency: var_globalEfficiency,
+            mean_local_efficiency: var_meanLocalEfficiency,
+            clustering_coeff: var_clusteringCoeff,
+            char_path_length: var_charPathLength,
+            small_worldness: var_smallWorldness,
+            modularity_q: var_modularityQ,
+            assortativity: var_assortativity,
+            nodal: var_nodal,
+            sweep: var_sweep,
+            exported_csv_path: var_exportedCsvPath,
+            exported_json_path: var_exportedJsonPath,
+        };
     }
 }
 
@@ -801,6 +922,12 @@ impl SseDecode for crate::api::LesionPipelineSummary {
         let mut var_netPartialFlat = <Vec<f32>>::sse_decode(deserializer);
         let mut var_netGcmiFlat = <Vec<f32>>::sse_decode(deserializer);
         let mut var_netTeFlat = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_censorMode = <String>::sse_decode(deserializer);
+        let mut var_nRegressors = <u32>::sse_decode(deserializer);
+        let mut var_dofRemaining = <u32>::sse_decode(deserializer);
+        let mut var_teNetPreviewRgba = <Vec<u8>>::sse_decode(deserializer);
+        let mut var_netTeAsymFlat = <Vec<f32>>::sse_decode(deserializer);
+        let mut var_netTeOutMinusIn = <Vec<f32>>::sse_decode(deserializer);
         return crate::api::LesionPipelineSummary {
             n_timepoints: var_nTimepoints,
             n_rois: var_nRois,
@@ -847,6 +974,12 @@ impl SseDecode for crate::api::LesionPipelineSummary {
             net_partial_flat: var_netPartialFlat,
             net_gcmi_flat: var_netGcmiFlat,
             net_te_flat: var_netTeFlat,
+            censor_mode: var_censorMode,
+            n_regressors: var_nRegressors,
+            dof_remaining: var_dofRemaining,
+            te_net_preview_rgba: var_teNetPreviewRgba,
+            net_te_asym_flat: var_netTeAsymFlat,
+            net_te_out_minus_in: var_netTeOutMinusIn,
         };
     }
 }
@@ -881,6 +1014,18 @@ impl SseDecode for Vec<String> {
     }
 }
 
+impl SseDecode for Vec<crate::api::DensitySweepDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::DensitySweepDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::NetworkDynamicsDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -888,6 +1033,18 @@ impl SseDecode for Vec<crate::api::NetworkDynamicsDto> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::NetworkDynamicsDto>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::NodalGraphDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::NodalGraphDto>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -1007,6 +1164,34 @@ impl SseDecode for crate::api::NiftiHeaderSummary {
             tr_sec: var_trSec,
             datatype_code: var_datatypeCode,
             affine_flat: var_affineFlat,
+        };
+    }
+}
+
+impl SseDecode for crate::api::NodalGraphDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_roiIndex = <u32>::sse_decode(deserializer);
+        let mut var_label = <String>::sse_decode(deserializer);
+        let mut var_network = <String>::sse_decode(deserializer);
+        let mut var_degree = <u32>::sse_decode(deserializer);
+        let mut var_strength = <f64>::sse_decode(deserializer);
+        let mut var_clustering = <f64>::sse_decode(deserializer);
+        let mut var_localEfficiency = <f64>::sse_decode(deserializer);
+        let mut var_betweenness = <f64>::sse_decode(deserializer);
+        let mut var_participationCoeff = <f64>::sse_decode(deserializer);
+        let mut var_withinModuleZ = <f64>::sse_decode(deserializer);
+        return crate::api::NodalGraphDto {
+            roi_index: var_roiIndex,
+            label: var_label,
+            network: var_network,
+            degree: var_degree,
+            strength: var_strength,
+            clustering: var_clustering,
+            local_efficiency: var_localEfficiency,
+            betweenness: var_betweenness,
+            participation_coeff: var_participationCoeff,
+            within_module_z: var_withinModuleZ,
         };
     }
 }
@@ -1192,19 +1377,20 @@ fn pde_ffi_dispatcher_primary_impl(
             wire__crate__api__auto_segment_lesion_asymmetry_impl(port, ptr, rust_vec_len, data_len)
         }
         2 => wire__crate__api__compute_cached_dynamics_impl(port, ptr, rust_vec_len, data_len),
-        3 => wire__crate__api__edit_lesion_mask_brush_impl(port, ptr, rust_vec_len, data_len),
-        4 => wire__crate__api__edit_lesion_mask_magic_wand_impl(port, ptr, rust_vec_len, data_len),
-        5 => wire__crate__api__engine_info_impl(port, ptr, rust_vec_len, data_len),
-        6 => wire__crate__api__get_roi_timeseries_detail_impl(port, ptr, rust_vec_len, data_len),
-        7 => wire__crate__api__get_top_hubs_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__inspect_nifti_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__morphology_lesion_mask_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__render_slice_rgba_impl(port, ptr, rust_vec_len, data_len),
-        11 => {
+        3 => wire__crate__api__compute_graph_theory_impl(port, ptr, rust_vec_len, data_len),
+        4 => wire__crate__api__edit_lesion_mask_brush_impl(port, ptr, rust_vec_len, data_len),
+        5 => wire__crate__api__edit_lesion_mask_magic_wand_impl(port, ptr, rust_vec_len, data_len),
+        6 => wire__crate__api__engine_info_impl(port, ptr, rust_vec_len, data_len),
+        7 => wire__crate__api__get_roi_timeseries_detail_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__get_top_hubs_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__inspect_nifti_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__morphology_lesion_mask_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__render_slice_rgba_impl(port, ptr, rust_vec_len, data_len),
+        12 => {
             wire__crate__api__render_slice_with_lesion_rgba_impl(port, ptr, rust_vec_len, data_len)
         }
-        12 => wire__crate__api__run_lesion_aware_pipeline_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__run_roi_denoise_pipeline_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__run_lesion_aware_pipeline_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__run_roi_denoise_pipeline_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1254,6 +1440,27 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::DenoisePipelineSummary>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::DensitySweepDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.density.into_into_dart().into_dart(),
+            self.global_efficiency.into_into_dart().into_dart(),
+            self.clustering_coeff.into_into_dart().into_dart(),
+            self.small_worldness.into_into_dart().into_dart(),
+            self.modularity_q.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::DensitySweepDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::DensitySweepDto>
+    for crate::api::DensitySweepDto
+{
+    fn into_into_dart(self) -> crate::api::DensitySweepDto {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::DynamicsSummaryDto {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1273,6 +1480,14 @@ impl flutter_rust_bridge::IntoDart for crate::api::DynamicsSummaryDto {
             self.ple_mean.into_into_dart().into_dart(),
             self.networks.into_into_dart().into_dart(),
             self.exported_csv_path.into_into_dart().into_dart(),
+            self.anova_f_acw0.into_into_dart().into_dart(),
+            self.anova_p_acw0.into_into_dart().into_dart(),
+            self.anova_f_lzc.into_into_dart().into_dart(),
+            self.anova_p_lzc.into_into_dart().into_dart(),
+            self.anova_f_sampen.into_into_dart().into_dart(),
+            self.anova_p_sampen.into_into_dart().into_dart(),
+            self.anova_f_ple.into_into_dart().into_dart(),
+            self.anova_p_ple.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1302,6 +1517,42 @@ impl flutter_rust_bridge::IntoDart for crate::api::EngineInfo {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::EngineInfo {}
 impl flutter_rust_bridge::IntoIntoDart<crate::api::EngineInfo> for crate::api::EngineInfo {
     fn into_into_dart(self) -> crate::api::EngineInfo {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::GraphTheorySummaryDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.metric.into_into_dart().into_dart(),
+            self.density.into_into_dart().into_dart(),
+            self.weighted.into_into_dart().into_dart(),
+            self.n_intact_nodes.into_into_dart().into_dart(),
+            self.n_excluded_nodes.into_into_dart().into_dart(),
+            self.n_edges.into_into_dart().into_dart(),
+            self.global_efficiency.into_into_dart().into_dart(),
+            self.mean_local_efficiency.into_into_dart().into_dart(),
+            self.clustering_coeff.into_into_dart().into_dart(),
+            self.char_path_length.into_into_dart().into_dart(),
+            self.small_worldness.into_into_dart().into_dart(),
+            self.modularity_q.into_into_dart().into_dart(),
+            self.assortativity.into_into_dart().into_dart(),
+            self.nodal.into_into_dart().into_dart(),
+            self.sweep.into_into_dart().into_dart(),
+            self.exported_csv_path.into_into_dart().into_dart(),
+            self.exported_json_path.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::GraphTheorySummaryDto
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::GraphTheorySummaryDto>
+    for crate::api::GraphTheorySummaryDto
+{
+    fn into_into_dart(self) -> crate::api::GraphTheorySummaryDto {
         self
     }
 }
@@ -1354,6 +1605,12 @@ impl flutter_rust_bridge::IntoDart for crate::api::LesionPipelineSummary {
             self.net_partial_flat.into_into_dart().into_dart(),
             self.net_gcmi_flat.into_into_dart().into_dart(),
             self.net_te_flat.into_into_dart().into_dart(),
+            self.censor_mode.into_into_dart().into_dart(),
+            self.n_regressors.into_into_dart().into_dart(),
+            self.dof_remaining.into_into_dart().into_dart(),
+            self.te_net_preview_rgba.into_into_dart().into_dart(),
+            self.net_te_asym_flat.into_into_dart().into_dart(),
+            self.net_te_out_minus_in.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1446,6 +1703,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::NiftiHeaderSummary>
     for crate::api::NiftiHeaderSummary
 {
     fn into_into_dart(self) -> crate::api::NiftiHeaderSummary {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::NodalGraphDto {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.roi_index.into_into_dart().into_dart(),
+            self.label.into_into_dart().into_dart(),
+            self.network.into_into_dart().into_dart(),
+            self.degree.into_into_dart().into_dart(),
+            self.strength.into_into_dart().into_dart(),
+            self.clustering.into_into_dart().into_dart(),
+            self.local_efficiency.into_into_dart().into_dart(),
+            self.betweenness.into_into_dart().into_dart(),
+            self.participation_coeff.into_into_dart().into_dart(),
+            self.within_module_z.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::NodalGraphDto {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::NodalGraphDto> for crate::api::NodalGraphDto {
+    fn into_into_dart(self) -> crate::api::NodalGraphDto {
         self
     }
 }
@@ -1601,6 +1882,17 @@ impl SseEncode for crate::api::DenoisePipelineSummary {
     }
 }
 
+impl SseEncode for crate::api::DensitySweepDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <f64>::sse_encode(self.density, serializer);
+        <f64>::sse_encode(self.global_efficiency, serializer);
+        <f64>::sse_encode(self.clustering_coeff, serializer);
+        <f64>::sse_encode(self.small_worldness, serializer);
+        <f64>::sse_encode(self.modularity_q, serializer);
+    }
+}
+
 impl SseEncode for crate::api::DynamicsSummaryDto {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1620,6 +1912,14 @@ impl SseEncode for crate::api::DynamicsSummaryDto {
         <f64>::sse_encode(self.ple_mean, serializer);
         <Vec<crate::api::NetworkDynamicsDto>>::sse_encode(self.networks, serializer);
         <Option<String>>::sse_encode(self.exported_csv_path, serializer);
+        <f64>::sse_encode(self.anova_f_acw0, serializer);
+        <f64>::sse_encode(self.anova_p_acw0, serializer);
+        <f64>::sse_encode(self.anova_f_lzc, serializer);
+        <f64>::sse_encode(self.anova_p_lzc, serializer);
+        <f64>::sse_encode(self.anova_f_sampen, serializer);
+        <f64>::sse_encode(self.anova_p_sampen, serializer);
+        <f64>::sse_encode(self.anova_f_ple, serializer);
+        <f64>::sse_encode(self.anova_p_ple, serializer);
     }
 }
 
@@ -1643,6 +1943,29 @@ impl SseEncode for f64 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_f64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for crate::api::GraphTheorySummaryDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.metric, serializer);
+        <f64>::sse_encode(self.density, serializer);
+        <bool>::sse_encode(self.weighted, serializer);
+        <u32>::sse_encode(self.n_intact_nodes, serializer);
+        <u32>::sse_encode(self.n_excluded_nodes, serializer);
+        <u32>::sse_encode(self.n_edges, serializer);
+        <f64>::sse_encode(self.global_efficiency, serializer);
+        <f64>::sse_encode(self.mean_local_efficiency, serializer);
+        <f64>::sse_encode(self.clustering_coeff, serializer);
+        <f64>::sse_encode(self.char_path_length, serializer);
+        <f64>::sse_encode(self.small_worldness, serializer);
+        <f64>::sse_encode(self.modularity_q, serializer);
+        <f64>::sse_encode(self.assortativity, serializer);
+        <Vec<crate::api::NodalGraphDto>>::sse_encode(self.nodal, serializer);
+        <Vec<crate::api::DensitySweepDto>>::sse_encode(self.sweep, serializer);
+        <Option<String>>::sse_encode(self.exported_csv_path, serializer);
+        <Option<String>>::sse_encode(self.exported_json_path, serializer);
     }
 }
 
@@ -1701,6 +2024,12 @@ impl SseEncode for crate::api::LesionPipelineSummary {
         <Vec<f32>>::sse_encode(self.net_partial_flat, serializer);
         <Vec<f32>>::sse_encode(self.net_gcmi_flat, serializer);
         <Vec<f32>>::sse_encode(self.net_te_flat, serializer);
+        <String>::sse_encode(self.censor_mode, serializer);
+        <u32>::sse_encode(self.n_regressors, serializer);
+        <u32>::sse_encode(self.dof_remaining, serializer);
+        <Vec<u8>>::sse_encode(self.te_net_preview_rgba, serializer);
+        <Vec<f32>>::sse_encode(self.net_te_asym_flat, serializer);
+        <Vec<f32>>::sse_encode(self.net_te_out_minus_in, serializer);
     }
 }
 
@@ -1725,12 +2054,32 @@ impl SseEncode for Vec<String> {
     }
 }
 
+impl SseEncode for Vec<crate::api::DensitySweepDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::DensitySweepDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::NetworkDynamicsDto> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::NetworkDynamicsDto>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::NodalGraphDto> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::NodalGraphDto>::sse_encode(item, serializer);
         }
     }
 }
@@ -1815,6 +2164,22 @@ impl SseEncode for crate::api::NiftiHeaderSummary {
         <f64>::sse_encode(self.tr_sec, serializer);
         <i16>::sse_encode(self.datatype_code, serializer);
         <Vec<f32>>::sse_encode(self.affine_flat, serializer);
+    }
+}
+
+impl SseEncode for crate::api::NodalGraphDto {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.roi_index, serializer);
+        <String>::sse_encode(self.label, serializer);
+        <String>::sse_encode(self.network, serializer);
+        <u32>::sse_encode(self.degree, serializer);
+        <f64>::sse_encode(self.strength, serializer);
+        <f64>::sse_encode(self.clustering, serializer);
+        <f64>::sse_encode(self.local_efficiency, serializer);
+        <f64>::sse_encode(self.betweenness, serializer);
+        <f64>::sse_encode(self.participation_coeff, serializer);
+        <f64>::sse_encode(self.within_module_z, serializer);
     }
 }
 

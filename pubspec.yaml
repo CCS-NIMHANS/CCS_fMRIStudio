@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.3.0+6
+version: 0.4.0+7
 
 environment:
   sdk: ^3.11.5
@@ -72,6 +72,7 @@ flutter:
     - python_sidecar/src/ccs_fmri_sidecar/lesion_segment.py
     - python_sidecar/src/ccs_fmri_sidecar/templates.py
     - python_sidecar/src/ccs_fmri_sidecar/group_lmm.py
+    - python_sidecar/src/ccs_fmri_sidecar/nilearn_stats.py
     - python_sidecar/src/ccs_fmri_sidecar/benchmark_vs_nilearn.py
 
   # An image asset can refer to one or more resolution-specific "variants", see

@@ -3,6 +3,7 @@ pub mod api;
 pub mod connectivity;
 pub mod denoise;
 pub mod dynamics;
+pub mod graph_theory;
 pub mod info_theory;
 pub mod lesion;
 pub mod nifti_io;
@@ -428,5 +429,110 @@ mod tests {
         assert!(dyn_rows[0].med_f_mean >= 0.01 && dyn_rows[0].med_f_mean <= 0.09);
         assert!(dyn_rows[0].se_mean > 0.0 && dyn_rows[0].se_mean <= 1.0);
         assert!(dyn_rows[0].ple_mean.is_finite());
+    }
+
+    #[test]
+    fn test_linear_interpolation_censoring_avoids_zero_plateaus() {
+        use crate::denoise::{simultaneous_denoise_with_mode, CensorMode};
+
+        let nt = 200;
+        let tr = 2.0_f64;
+        let mut ts = Array2::<f64>::zeros((nt, 2));
+        for t in 0..nt {
+            let sec = (t as f64) * tr;
+            let sig = (2.0 * PI * 0.03 * sec).sin() + 0.4 * (2.0 * PI * 0.05 * sec).cos();
+            ts[[t, 0]] = sig;
+            ts[[t, 1]] = 0.8 * sig;
+        }
+        // Inject massive motion spikes across 20..50
+        let scrub: Vec<usize> = (20..50).collect();
+        for &idx in &scrub {
+            ts[[idx, 0]] += 50.0;
+            ts[[idx, 1]] += 50.0;
+        }
+
+        let res_spike = simultaneous_denoise_with_mode(
+            ts.view(),
+            None,
+            tr,
+            Some(0.008),
+            Some(0.09),
+            &scrub,
+            CensorMode::Spike,
+            false,
+        )
+        .unwrap();
+        let res_interp = simultaneous_denoise_with_mode(
+            ts.view(),
+            None,
+            tr,
+            Some(0.008),
+            Some(0.09),
+            &scrub,
+            CensorMode::Interpolate,
+            true,
+        )
+        .unwrap();
+
+        // Spike mode zeros out censored block; interpolate keeps continuous signal & more DOF
+        assert!(res_interp.dof_remaining > res_spike.dof_remaining);
+        let interp_block_energy: f64 = scrub.iter().map(|&t| res_interp.clean_ts[[t, 0]].abs()).sum();
+        assert!(interp_block_energy > 1.0, "Interpolate should keep continuous variation across censored spans");
+    }
+
+    #[test]
+    fn test_graph_theory_ring_and_hub_metrics() {
+        use crate::dynamics::one_way_anova_by_group;
+        use crate::graph_theory::compute_full_graph_theory;
+
+        // Star + connector graph (6 nodes: node 0 hub of module 0, node 5 excluded NaN)
+        let mut mat = Array2::<f64>::zeros((6, 6));
+        for i in 0..5 {
+            mat[[i, i]] = 1.0;
+        }
+        let edges = [(0, 1, 0.9), (0, 2, 0.9), (0, 3, 0.9), (0, 4, 0.9), (1, 2, 0.5)];
+        for &(u, v, w) in &edges {
+            mat[[u, v]] = w;
+            mat[[v, u]] = w;
+        }
+        for k in 0..6 {
+            mat[[5, k]] = f64::NAN;
+            mat[[k, 5]] = f64::NAN;
+        }
+
+        let communities = vec![0, 0, 0, 1, 1, 0];
+        let gt = compute_full_graph_theory(mat.view(), &communities, 1.0, false).unwrap();
+        assert_eq!(gt.n_intact_nodes, 5);
+        assert_eq!(gt.n_excluded_nodes, 1);
+        assert!(gt.global_efficiency > 0.0 && gt.global_efficiency <= 1.0);
+        assert!(gt.assortativity < 0.0, "Star hub graph should be disassortative: {}", gt.assortativity);
+        // Node 0 is bridge connecting module 0 and module 1
+        assert!(gt.nodal[0].betweenness > gt.nodal[3].betweenness);
+        assert!(gt.nodal[0].participation_coeff > 0.4);
+        assert!(!gt.sweep.is_empty());
+
+        let (f, p) = one_way_anova_by_group(&[10.0, 10.2, 10.1, 20.0, 20.2, 19.9], &[0, 0, 0, 1, 1, 1]);
+        assert!(f > 100.0 && p < 0.001, "Expected strongly significant ANOVA: F={f}, p={p}");
+    }
+
+    #[test]
+    fn test_te_net_asymmetry_sign() {
+        use crate::api::{compute_net_te_out_minus_in, compute_te_net_asymmetry_matrix};
+
+        let mut te = Array2::<f64>::zeros((3, 3));
+        te[[0, 1]] = 0.25;
+        te[[1, 0]] = 0.05;
+        te[[2, 0]] = f64::NAN;
+        te[[0, 2]] = f64::NAN;
+        te[[2, 2]] = f64::NAN;
+
+        let asym = compute_te_net_asymmetry_matrix(te.view());
+        assert!((asym[[0, 1]] - 0.20).abs() < 1e-12);
+        assert!((asym[[1, 0]] + 0.20).abs() < 1e-12);
+        assert!(asym[[0, 2]].is_nan());
+
+        let net_flow = compute_net_te_out_minus_in(&[0.0, 0.25, 0.05, 0.0], 2);
+        assert!((net_flow[0] - 0.20_f32).abs() < 1e-6);
+        assert!((net_flow[1] + 0.20_f32).abs() < 1e-6);
     }
 }

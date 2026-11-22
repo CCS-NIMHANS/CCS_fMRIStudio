@@ -4,6 +4,99 @@ use ndarray::{Array2, ArrayView2, ArrayView3, ArrayView4, Axis};
 use std::f64::consts::PI;
 use std::path::Path;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CensorMode {
+    Interpolate,
+    Spike,
+    None,
+}
+
+impl CensorMode {
+    pub fn from_str_opt(s: Option<&str>) -> Self {
+        match s.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
+            Some("spike") => CensorMode::Spike,
+            Some("none") => CensorMode::None,
+            _ => CensorMode::Interpolate,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CensorMode::Interpolate => "interpolate",
+            CensorMode::Spike => "spike",
+            CensorMode::None => "none",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct DenoiseResult {
+    pub clean_ts: Array2<f64>,
+    pub n_regressors: usize,
+    pub dof_remaining: usize,
+}
+
+/// Linearly interpolates across contiguous motion-scrubbed timepoints per ROI column
+/// (Power et al., 2014), clamping leading/trailing spans to nearest intact boundary.
+pub fn linear_interpolate_scrubbed(mat: &mut Array2<f64>, scrub_indices: &[usize]) {
+    let (nt, n_cols) = mat.dim();
+    if nt < 2 || scrub_indices.is_empty() {
+        return;
+    }
+    let mut is_bad = vec![false; nt];
+    let mut any_bad = false;
+    for &idx in scrub_indices {
+        if idx < nt {
+            is_bad[idx] = true;
+            any_bad = true;
+        }
+    }
+    if !any_bad {
+        return;
+    }
+    let intact_count = is_bad.iter().filter(|&&b| !b).count();
+    if intact_count == 0 {
+        return;
+    }
+
+    for col in 0..n_cols {
+        if mat.column(col).iter().any(|v| !v.is_finite()) {
+            continue;
+        }
+        let mut t = 0_usize;
+        while t < nt {
+            if !is_bad[t] {
+                t += 1;
+                continue;
+            }
+            let start = t;
+            while t < nt && is_bad[t] {
+                t += 1;
+            }
+            let end = t - 1;
+            if start == 0 {
+                let anchor = mat[[end + 1, col]];
+                for k in 0..=end {
+                    mat[[k, col]] = anchor;
+                }
+            } else if end + 1 >= nt {
+                let anchor = mat[[start - 1, col]];
+                for k in start..nt {
+                    mat[[k, col]] = anchor;
+                }
+            } else {
+                let left = mat[[start - 1, col]];
+                let right = mat[[end + 1, col]];
+                let span = ((end + 1) - (start - 1)) as f64;
+                for k in start..=end {
+                    let frac = (k - (start - 1)) as f64 / span;
+                    mat[[k, col]] = left + frac * (right - left);
+                }
+            }
+        }
+    }
+}
+
 fn detrend_and_standardize_cols(mat: &mut Array2<f64>) -> Vec<usize> {
     let (nt, ncols) = mat.dim();
     let t_mean = (nt as f64 - 1.0) * 0.5;
@@ -154,40 +247,14 @@ pub fn build_dct_stopband_basis(
     basis
 }
 
-/// Performs single-step simultaneous nuisance regression + DCT stopband filtering + scrubbing
-/// using an orthonormal SVD basis `Q` (`Y_clean = Y - Q (Q^T Y)`).
-pub fn simultaneous_denoise(
-    timeseries: ArrayView2<'_, f64>,
+fn build_nuisance_columns(
+    nt: usize,
     confounds: Option<ArrayView2<'_, f64>>,
-    tr_sec: f64,
-    low_hz: Option<f64>,
-    high_hz: Option<f64>,
-    fd_scrub_indices: &[usize],
-    zscore_output: bool,
-) -> Result<Array2<f64>> {
-    let (nt, n_rois) = timeseries.dim();
-    if nt < 4 {
-        bail!("Need at least 4 timepoints for denoising, got {nt}");
-    }
-    if let Some(conf) = confounds {
-        if conf.nrows() != nt {
-            bail!(
-                "Confounds row count ({}) does not match timeseries timepoints ({nt})",
-                conf.nrows()
-            );
-        }
-    }
-
-    let dct = build_dct_stopband_basis(nt, tr_sec, low_hz, high_hz);
-
-    // Collect design columns into column-major flat storage.
+) -> Vec<Vec<f64>> {
     let mut columns: Vec<Vec<f64>> = Vec::new();
-
-    // 1. Intercept (constant)
     let inv_sqrt_n = 1.0 / (nt as f64).sqrt();
     columns.push(vec![inv_sqrt_n; nt]);
 
-    // 2. Centered linear trend
     let t_mean = (nt as f64 - 1.0) * 0.5;
     let mut trend: Vec<f64> = (0..nt).map(|t| t as f64 - t_mean).collect();
     let trend_norm = trend.iter().map(|v| v * v).sum::<f64>().sqrt();
@@ -198,7 +265,6 @@ pub fn simultaneous_denoise(
         columns.push(trend);
     }
 
-    // 3. Confounds (standardized to unit norm for SVD conditioning)
     if let Some(conf) = confounds {
         for j in 0..conf.ncols() {
             let mut col: Vec<f64> = conf.column(j).to_vec();
@@ -217,22 +283,13 @@ pub fn simultaneous_denoise(
             }
         }
     }
+    columns
+}
 
-    // 4. Scrubbing spike regressors
-    let mut unique_spikes: Vec<usize> = fd_scrub_indices.iter().copied().filter(|&i| i < nt).collect();
-    unique_spikes.sort_unstable();
-    unique_spikes.dedup();
-    for idx in unique_spikes {
-        let mut spike = vec![0.0_f64; nt];
-        spike[idx] = 1.0;
-        columns.push(spike);
+fn project_orthonormal(columns: &[Vec<f64>], nt: usize, y_mat: &Mat<f64>) -> Result<(Mat<f64>, usize)> {
+    if columns.is_empty() {
+        return Ok((y_mat.clone(), 0));
     }
-
-    // 5. DCT stopband basis
-    for j in 0..dct.ncols() {
-        columns.push(dct.column(j).to_vec());
-    }
-
     let p = columns.len();
     let x_mat = Mat::<f64>::from_fn(nt, p, |r, c| columns[c][r]);
     let svd = x_mat
@@ -246,21 +303,163 @@ pub fn simultaneous_denoise(
         .fold(0.0_f64, f64::max);
     let tol = s_max * 1e-10;
     let keep_cols: Vec<usize> = (0..u.ncols()).filter(|&i| s[i] > tol).collect();
+    if keep_cols.is_empty() {
+        return Ok((y_mat.clone(), 0));
+    }
+    let q = Mat::<f64>::from_fn(nt, keep_cols.len(), |r, c| u[(r, keep_cols[c])]);
+    let qt_y = q.transpose() * y_mat;
+    Ok((y_mat - (&q * &qt_y), keep_cols.len()))
+}
+
+fn regress_nuisance_on_intact_and_interpolate(
+    y_mat: &Mat<f64>,
+    nuis_cols: &[Vec<f64>],
+    dct: &Array2<f64>,
+    unique_spikes: &[usize],
+    nt: usize,
+) -> Result<(Mat<f64>, usize)> {
+    let mut is_bad = vec![false; nt];
+    for &idx in unique_spikes {
+        is_bad[idx] = true;
+    }
+    let good_rows: Vec<usize> = (0..nt).filter(|&t| !is_bad[t]).collect();
+    let nuis_p = nuis_cols.len();
+    let nv = y_mat.ncols();
+
+    let mut resid = Array2::<f64>::zeros((nt, nv));
+
+    let nuis_rank = if good_rows.len() > nuis_p + 2 && nuis_p > 0 {
+        let x_good = Mat::<f64>::from_fn(good_rows.len(), nuis_p, |r, c| nuis_cols[c][good_rows[r]]);
+        let y_good = Mat::<f64>::from_fn(good_rows.len(), nv, |r, c| y_mat[(good_rows[r], c)]);
+        let svd = x_good
+            .thin_svd()
+            .map_err(|e| anyhow::anyhow!("Nuisance OLS SVD failed: {e:?}"))?;
+        let s = svd.S();
+        let u = svd.U();
+        let v = svd.V();
+
+        let s_max = (0..u.ncols()).map(|i| s[i].abs()).fold(0.0_f64, f64::max);
+        let tol = s_max * 1e-10;
+        let keep: Vec<usize> = (0..u.ncols()).filter(|&i| s[i] > tol).collect();
+
+        let y_resid_mat = if keep.is_empty() {
+            y_mat.clone()
+        } else {
+            let k = keep.len();
+            let u_k = Mat::<f64>::from_fn(good_rows.len(), k, |r, c| u[(r, keep[c])]);
+            let v_k = Mat::<f64>::from_fn(nuis_p, k, |r, c| v[(r, keep[c])]);
+            let mut ut_y = u_k.transpose() * &y_good;
+            for r in 0..k {
+                let inv_s = 1.0 / s[keep[r]];
+                for c in 0..nv {
+                    ut_y[(r, c)] *= inv_s;
+                }
+            }
+            let beta = &v_k * &ut_y;
+            let x_full = Mat::<f64>::from_fn(nt, nuis_p, |r, c| nuis_cols[c][r]);
+            y_mat - (&x_full * &beta)
+        };
+        for r in 0..nt {
+            for c in 0..nv {
+                resid[[r, c]] = y_resid_mat[(r, c)];
+            }
+        }
+        linear_interpolate_scrubbed(&mut resid, unique_spikes);
+        keep.len()
+    } else {
+        for r in 0..nt {
+            for c in 0..nv {
+                resid[[r, c]] = y_mat[(r, c)];
+            }
+        }
+        linear_interpolate_scrubbed(&mut resid, unique_spikes);
+        let resid_mat = Mat::<f64>::from_fn(nt, nv, |r, c| resid[[r, c]]);
+        let (projected, r_rank) = project_orthonormal(nuis_cols, nt, &resid_mat)?;
+        for r in 0..nt {
+            for c in 0..nv {
+                resid[[r, c]] = projected[(r, c)];
+            }
+        }
+        r_rank
+    };
+
+    // Remove DC, linear drift & stopband frequencies on the interpolated signal so
+    // censoring spikes does not create flat-zero plateaus or ring into bandpass.
+    let mut bp_cols = build_nuisance_columns(nt, None);
+    for j in 0..dct.ncols() {
+        bp_cols.push(dct.column(j).to_vec());
+    }
+    let resid_mat = Mat::<f64>::from_fn(nt, nv, |r, c| resid[[r, c]]);
+    let (clean_mat, _) = project_orthonormal(&bp_cols, nt, &resid_mat)?;
+    let n_reg = (nuis_rank + dct.ncols()).min(nt);
+    Ok((clean_mat, n_reg))
+}
+
+/// Performs single-step simultaneous nuisance regression + DCT stopband filtering + selectable censoring.
+pub fn simultaneous_denoise_with_mode(
+    timeseries: ArrayView2<'_, f64>,
+    confounds: Option<ArrayView2<'_, f64>>,
+    tr_sec: f64,
+    low_hz: Option<f64>,
+    high_hz: Option<f64>,
+    fd_scrub_indices: &[usize],
+    censor_mode: CensorMode,
+    zscore_output: bool,
+) -> Result<DenoiseResult> {
+    let (nt, n_rois) = timeseries.dim();
+    if nt < 4 {
+        bail!("Need at least 4 timepoints for denoising, got {nt}");
+    }
+    if let Some(conf) = confounds {
+        if conf.nrows() != nt {
+            bail!(
+                "Confounds row count ({}) does not match timeseries timepoints ({nt})",
+                conf.nrows()
+            );
+        }
+    }
 
     let valid_rois: Vec<usize> = (0..n_rois)
         .filter(|&c| timeseries.column(c).iter().all(|v| v.is_finite()))
         .collect();
     if valid_rois.is_empty() {
-        return Ok(Array2::from_elem((nt, n_rois), f64::NAN));
+        return Ok(DenoiseResult {
+            clean_ts: Array2::from_elem((nt, n_rois), f64::NAN),
+            n_regressors: 0,
+            dof_remaining: nt,
+        });
     }
 
+    let dct = build_dct_stopband_basis(nt, tr_sec, low_hz, high_hz);
+    let mut columns = build_nuisance_columns(nt, confounds);
+
+    let mut unique_spikes: Vec<usize> = fd_scrub_indices.iter().copied().filter(|&i| i < nt).collect();
+    unique_spikes.sort_unstable();
+    unique_spikes.dedup();
+
     let y_mat = Mat::<f64>::from_fn(nt, valid_rois.len(), |r, c| timeseries[[r, valid_rois[c]]]);
-    let y_clean_mat = if keep_cols.is_empty() {
-        y_mat
-    } else {
-        let q = Mat::<f64>::from_fn(nt, keep_cols.len(), |r, c| u[(r, keep_cols[c])]);
-        let qt_y = q.transpose() * &y_mat;
-        &y_mat - (&q * &qt_y)
+
+    let (y_clean_mat, n_regressors) = match censor_mode {
+        CensorMode::Interpolate if !unique_spikes.is_empty() => {
+            regress_nuisance_on_intact_and_interpolate(&y_mat, &columns, &dct, &unique_spikes, nt)?
+        }
+        CensorMode::Spike => {
+            for idx in unique_spikes {
+                let mut spike = vec![0.0_f64; nt];
+                spike[idx] = 1.0;
+                columns.push(spike);
+            }
+            for j in 0..dct.ncols() {
+                columns.push(dct.column(j).to_vec());
+            }
+            project_orthonormal(&columns, nt, &y_mat)?
+        }
+        _ => {
+            for j in 0..dct.ncols() {
+                columns.push(dct.column(j).to_vec());
+            }
+            project_orthonormal(&columns, nt, &y_mat)?
+        }
     };
 
     let mut out = Array2::<f64>::from_elem((nt, n_rois), f64::NAN);
@@ -289,7 +488,34 @@ pub fn simultaneous_denoise(
         }
     }
 
-    Ok(out)
+    Ok(DenoiseResult {
+        clean_ts: out,
+        n_regressors,
+        dof_remaining: nt.saturating_sub(n_regressors),
+    })
+}
+
+/// Performs single-step simultaneous nuisance regression + DCT stopband filtering + spike scrubbing.
+pub fn simultaneous_denoise(
+    timeseries: ArrayView2<'_, f64>,
+    confounds: Option<ArrayView2<'_, f64>>,
+    tr_sec: f64,
+    low_hz: Option<f64>,
+    high_hz: Option<f64>,
+    fd_scrub_indices: &[usize],
+    zscore_output: bool,
+) -> Result<Array2<f64>> {
+    Ok(simultaneous_denoise_with_mode(
+        timeseries,
+        confounds,
+        tr_sec,
+        low_hz,
+        high_hz,
+        fd_scrub_indices,
+        CensorMode::Spike,
+        zscore_output,
+    )?
+    .clean_ts)
 }
 
 /// Loads BIDS-style confounds TSV, returning regression columns, FD scrub indices, and FD mm trace.

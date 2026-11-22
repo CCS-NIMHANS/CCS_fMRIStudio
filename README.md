@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <b>Current version: 0.3.0</b> ·
+  <b>Current version: 0.4.0</b> ·
   <a href="docs/wiki/Home.md"><b>Visual Wiki</b></a> ·
   <a href="CHANGELOG.md"><b>Release Notes</b></a> ·
   <a href="docs/wiki/Benchmarks-and-Validation.md"><b>Benchmarks &amp; Validation</b></a> ·
@@ -61,13 +61,19 @@ mkdir -p ~/CCS_fMRIStudio && tar -xzf ~/Downloads/CCSfMRIStudio-linux-x64.tar.gz
 
 ---
 
-## ✨ What's New in v0.3.0
+## ✨ What's New in v0.4.0
 
-- **Interactive Batch Analysis (`6. Batch`):** Scan a whole study root folder (`Patient_*/pre|post` or BIDS), add individual folders, or multi-select NIfTI/DICOM files into a searchable subject queue with checkboxes and per-subject file editors.
-- **Full End-to-End Batch Pipeline & Group Export:** Toggle DICOM conversion, `ANTsPy` preprocessing (`Skip Existing Preproc`), Rust denoising + Pearson/Partial/GCMI/TE connectivity, and timeseries dynamics (`ACW`, `LZC`, `SampEn`, `PLE`), with live progress, safe cancellation, 1-click single-subject inspection, and incremental `batch_summary.csv` + `batch_summary.json` export.
+- **Linear-Interpolation Censoring & Effective DOF QC (`CensorMode::Interpolate`):** Replaces low-DOF flat-zero spike plateaus on high-motion scans with Power et al. (2014) intact-frame nuisance regression + linear interpolation before bandpass filtering, reports **Effective DOF remaining** and **Motion QC warnings**, and uses robust MAD scaling for Raw vs Clean BOLD traces.
+- **Pure-Rust Graph Theory Tab (`Graph Theory`):** Computes NaN-safe Weighted & Binary Global/Local Efficiency, Onnela Clustering ($C$), Path Length ($L$), Maslov-Sneppen Small-Worldness ($\sigma$), Newman Modularity ($Q$), Assortativity ($r$), Brandes Betweenness, Participation Coefficient ($P_i$), Within-Module $z_i$, **Density Sweep (5%–40%)**, and **Hub Classification Scatter ($P_i$ vs $z_i$)**, exporting `graph_metrics_nodal.csv` and `graph_metrics_global.json`.
+- **Advanced Nilearn Statistical Inference (`Stats (Nilearn)`):** Runs **Single-Subject Seed-to-Voxel GLM** (BH-FDR / Bonferroni thresholding, MNI cluster tables, and inline `plot_glass_brain` / `plot_stat_map` figures) plus **Group / Batch Connectivity Statistics** (edgewise FDR $t$-tests, NBS permutation clusters, Tangent-Space CV decoding, and `statsmodels.MixedLM`).
+- **Net Directed Transfer Entropy & Zoomed ANOVA Dynamics:** Adds **Net Flow (`TE i→j − TE j→i`)** toggle with mid-arc directional chevrons + **Sender vs Receiver** diverging bar chart, plus zoomed Y-axis scaling and Yeo-7 One-Way ANOVA (`F`, `p`) across intrinsic timescales and complexity.
 
 <details>
-<summary>Previous Releases: v0.2.0, v0.1.3, v0.1.2, v0.1.1 &amp; v0.1.0</summary>
+<summary>Previous Releases: v0.3.0, v0.2.0, v0.1.3, v0.1.2, v0.1.1 &amp; v0.1.0</summary>
+
+**v0.3.0**
+- **Interactive Batch Analysis (`6. Batch`):** Scan a whole study root folder (`Patient_*/pre|post` or BIDS), add individual folders, or multi-select NIfTI/DICOM files into a searchable subject queue with checkboxes and per-subject file editors.
+- **Full End-to-End Batch Pipeline & Group Export:** Toggle DICOM conversion, `ANTsPy` preprocessing (`Skip Existing Preproc`), Rust denoising + Pearson/Partial/GCMI/TE connectivity, and timeseries dynamics (`ACW`, `LZC`, `SampEn`, `PLE`), with live progress, safe cancellation, 1-click single-subject inspection, and incremental `batch_summary.csv` + `batch_summary.json` export.
 
 **v0.2.0**
 - **CONN-Style Denoising Quality Control:** Visualize before-vs-after FC bell curves, Framewise Displacement motion traces with scrubbed spikes, Welch Power Spectral Density filtering, and Raw vs Clean BOLD Carpet Plots side-by-side.
