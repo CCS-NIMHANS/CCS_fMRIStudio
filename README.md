@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <b>Current version: 0.4.0</b> ·
+  <b>Current version: 0.4.1</b> ·
   <a href="docs/wiki/Home.md"><b>Visual Wiki</b></a> ·
   <a href="CHANGELOG.md"><b>Release Notes</b></a> ·
   <a href="docs/wiki/Benchmarks-and-Validation.md"><b>Benchmarks &amp; Validation</b></a> ·

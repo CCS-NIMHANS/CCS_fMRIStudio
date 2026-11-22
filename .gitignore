@@ -55,6 +55,7 @@ app.*.map.json
 
 # Test / sample neuroimaging outputs
 /data_test_output/
+/validation_data/
 *.nii
 *.nii.gz
 assets/atlases/*.nii

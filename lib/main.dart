@@ -2450,6 +2450,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
       cleanCarpetImage: _carpetImage,
       boldMniPath: _boldMniCtrl.text.trim(),
       labelsJsonPath: _labelsCtrl.text.trim(),
+      confoundsPath: _confoundsCtrl.text.trim(),
       initialBatchCsvPath: _session.lastBatchSummaryCsvPath,
       onRunSidecarModule: (module, args, onLog) =>
           _session.runSidecarModule(module: module, args: args, onLog: onLog),

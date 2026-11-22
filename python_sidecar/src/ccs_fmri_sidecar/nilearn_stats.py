@@ -38,6 +38,28 @@ def _load_roi_label(labels_json: Path | None, roi_index: int, explicit_label: st
     return f"ROI_{roi_index + 1:03d}"
 
 
+def _load_confounds_matrix(confounds_tsv: Path | None, n_tp: int) -> np.ndarray | None:
+    if confounds_tsv is None or not confounds_tsv.exists():
+        return None
+    try:
+        df = pd.read_csv(confounds_tsv, sep="\t")
+    except Exception:
+        return None
+    if len(df) != n_tp:
+        return None
+    cols = [c for c in df.columns if c not in ("framewise_displacement", "ants_fd")]
+    if not cols:
+        return None
+    mat = df[cols].apply(pd.to_numeric, errors="coerce").fillna(0.0).to_numpy(dtype=np.float64)
+    # Drop near-constant columns and standardize
+    keep = np.std(mat, axis=0) > 1e-10
+    if not np.any(keep):
+        return None
+    mat = mat[:, keep]
+    mat = (mat - mat.mean(axis=0, keepdims=True)) / mat.std(axis=0, keepdims=True)
+    return mat
+
+
 def run_seed_glm(
     bold_mni: Path,
     denoised_ts_csv: Path,
@@ -48,6 +70,10 @@ def run_seed_glm(
     alpha: float = 0.05,
     correction: str = "fdr",
     cluster_threshold: int = 10,
+    confounds_tsv: Path | None = None,
+    low_hz: float | None = None,
+    high_hz: float | None = None,
+    tr_sec: float | None = None,
 ) -> dict:
     """Computes whole-brain seed-to-voxel GLM z-map, Nilearn thresholding & Glass Brain PNGs."""
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -74,9 +100,27 @@ def run_seed_glm(
             f"Seed length ({len(seed_z)}) does not match BOLD volume count ({nt})."
         )
 
+    eff_tr = float(tr_sec) if (tr_sec is not None and tr_sec > 0) else 0.0
+    if eff_tr <= 0.0:
+        zooms = bold_img.header.get_zooms()
+        eff_tr = float(zooms[3]) if len(zooms) >= 4 and zooms[3] > 0 else 2.0
+    nyquist = 0.5 / eff_tr
+    hp = float(low_hz) if (low_hz is not None and 0.0 < low_hz < nyquist * 0.95) else None
+    lp = float(high_hz) if (high_hz is not None and 0.0 < high_hz < nyquist * 0.95) else None
+    if hp is not None and lp is not None and hp >= lp:
+        hp, lp = None, None
+
+    conf_mat = _load_confounds_matrix(confounds_tsv, nt)
     mask_img = masking.compute_epi_mask(bold_img)
-    masker = NiftiMasker(mask_img=mask_img, detrend=True, standardize=None)
-    voxel_ts = masker.fit_transform(bold_img).astype(np.float64)  # (T, V)
+    masker = NiftiMasker(
+        mask_img=mask_img,
+        detrend=True,
+        standardize=None,
+        high_pass=hp,
+        low_pass=lp,
+        t_r=eff_tr if (hp is not None or lp is not None) else None,
+    )
+    voxel_ts = masker.fit_transform(bold_img, confounds=conf_mat).astype(np.float64)  # (T, V)
 
     v_mean = voxel_ts.mean(axis=0, keepdims=True)
     voxel_c = voxel_ts - v_mean
@@ -509,6 +553,10 @@ def main() -> None:
     parser.add_argument("--correction", default="fdr", choices=["fdr", "bonferroni", "fpr"])
     parser.add_argument("--alpha", type=float, default=0.05)
     parser.add_argument("--cluster-threshold", type=int, default=10)
+    parser.add_argument("--confounds-tsv", type=Path, default=None)
+    parser.add_argument("--low-hz", type=float, default=None)
+    parser.add_argument("--high-hz", type=float, default=None)
+    parser.add_argument("--tr", type=float, default=None)
 
     # Group Stats args
     parser.add_argument("--batch-csv", type=Path, default=None)
@@ -533,6 +581,10 @@ def main() -> None:
             alpha=args.alpha,
             correction=args.correction,
             cluster_threshold=args.cluster_threshold,
+            confounds_tsv=args.confounds_tsv,
+            low_hz=args.low_hz,
+            high_hz=args.high_hz,
+            tr_sec=args.tr,
         )
     else:
         if args.batch_csv is None:

@@ -2,6 +2,13 @@
 
 All notable changes to **CCS_fMRIStudio** are documented in this file.
 
+## [0.4.1] - 2026-11-22
+
+### Improved
+- **Nilearn Seed-to-Voxel GLM Voxelwise Denoising (`python_sidecar/src/ccs_fmri_sidecar/nilearn_stats.py`, `lib/widgets/results_dashboard.dart`)**:
+  - Updated `--mode seed-glm` to accept `--confounds-tsv`, `--low-hz`, `--high-hz`, and `--tr`, regressing motion confounds and applying matching resting-state bandpass filtering inside `NiftiMasker` before whole-brain Fisher-$z$ correlation so cortical and visual seeds achieve much higher spatial sensitivity.
+  - Added `/validation_data/` to `.gitignore`.
+
 ## [0.4.0] - 2026-11-22
 
 ### Added

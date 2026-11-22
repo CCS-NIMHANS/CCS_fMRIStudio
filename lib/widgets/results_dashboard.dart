@@ -29,6 +29,7 @@ class ResultsDashboard extends StatefulWidget {
     required this.cleanCarpetImage,
     this.boldMniPath = '',
     this.labelsJsonPath = '',
+    this.confoundsPath = '',
     this.initialBatchCsvPath = '',
     this.onRunSidecarModule,
     required this.onGoStep4,
@@ -50,6 +51,7 @@ class ResultsDashboard extends StatefulWidget {
   final ui.Image? cleanCarpetImage;
   final String boldMniPath;
   final String labelsJsonPath;
+  final String confoundsPath;
   final String initialBatchCsvPath;
   final SidecarModuleRunner? onRunSidecarModule;
   final VoidCallback onGoStep4;
@@ -311,9 +313,18 @@ class _ResultsDashboardState extends State<ResultsDashboard>
         '$_glmAlpha',
         '--cluster-threshold',
         '$_glmClusterThresh',
+        '--low-hz',
+        '${widget.lowHz}',
+        '--high-hz',
+        '${widget.highHz}',
+        '--tr',
+        '${widget.summary.trSec}',
         '--out-dir',
         outDir,
       ];
+      if (widget.confoundsPath.isNotEmpty) {
+        args.addAll(['--confounds-tsv', widget.confoundsPath]);
+      }
       if (widget.labelsJsonPath.isNotEmpty) {
         args.addAll(['--roi-labels-json', widget.labelsJsonPath]);
       }

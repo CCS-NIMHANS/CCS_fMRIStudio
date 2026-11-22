@@ -56,7 +56,7 @@ class FolderScanResult {
 }
 
 class FmriSessionState extends ChangeNotifier {
-  static const String bundleVersion = '0.4.0';
+  static const String bundleVersion = '0.4.1';
 
   static const List<String> _bundledAssets = [
     'assets/templates/registry.json',
