@@ -27,6 +27,7 @@
   <a href="CHANGELOG.md"><b>Release Notes</b></a> ·
   <a href="docs/wiki/Benchmarks-and-Validation.md"><b>Benchmarks &amp; Validation</b></a> ·
   <a href="docs/wiki/Building-and-Releasing.md"><b>3-OS Build Guide</b></a> ·
+  <a href="CODE_SIGNING_POLICY.md"><b>Code Signing Policy</b></a> ·
   <a href="https://github.com/CCS-NIMHANS/CCS_fMRIStudio/issues"><b>Report Issue</b></a>
 </p>
 
@@ -41,6 +42,7 @@
 | **Linux (x86_64)** | Portable Desktop Bundle (`.tar.gz`) | [CCSfMRIStudio-linux-x64.tar.gz](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-linux-x64.tar.gz) |
 
 > 📦 Checksums (`SHA256SUMS.txt`) and release assets are published on the **[GitHub Releases Page](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest)**.
+> 🔐 Free Windows code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/) (see [Code Signing Policy](CODE_SIGNING_POLICY.md)).
 
 <details>
 <summary><b>🍏 macOS Gatekeeper Setup &amp; 🐧 Linux Bundle Launch</b></summary>
