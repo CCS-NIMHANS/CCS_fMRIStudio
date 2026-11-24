@@ -117,24 +117,22 @@ jobs:
           test -f "$APP/Contents/Frameworks/libccs_fmri_core.dylib"
           test -x "$APP/Contents/MacOS/bench_denoise"
 
-      - name: Ad-hoc sign macOS app bundle
-        run: |
-          APP="build/macos/Build/Products/Release/ccs_fmri_studio.app"
-          codesign --force --deep --sign - "$APP"
-          codesign --verify --deep --strict "$APP"
-
-      - name: Package macOS app as ZIP
-        run: |
-          mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent \
-            "build/macos/Build/Products/Release/ccs_fmri_studio.app" \
-            dist/CCSfMRIStudio-macos.zip
+      - name: Sign, package, and notarize macOS app
+        env:
+          MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          MACOS_NOTARY_KEY_BASE64: ${{ secrets.MACOS_NOTARY_KEY_BASE64 }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          APPLE_TEAM_ID: Y445J7MR4Q
+        run: bash scripts/sign_and_notarize_macos.sh
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
         with:
           name: CCSfMRIStudio-macos
-          path: dist/CCSfMRIStudio-macos.zip
+          path: dist/CCSfMRIStudio-macos.*
           if-no-files-found: error
           retention-days: 14
 
@@ -142,6 +140,8 @@ jobs:
     name: Windows
     needs: [validate-release]
     runs-on: windows-2022
+    env:
+      HAS_SIGNPATH: ${{ secrets.SIGNPATH_API_TOKEN != '' && secrets.SIGNPATH_ORG_ID != '' }}
     if: >-
       github.event_name == 'workflow_dispatch' ||
       startsWith(github.ref, 'refs/tags/v') ||
@@ -194,6 +194,44 @@ jobs:
           if (-not (Test-Path "$dest\bench_denoise.exe")) { exit 1 }
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Compress-Archive -Path "$dest\*" -DestinationPath dist\CCSfMRIStudio-windows-x64.zip -Force
+
+      - name: Upload unsigned Windows bundle for SignPath
+        id: upload-unsigned-windows
+        if: env.HAS_SIGNPATH == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-app-unsigned
+          path: dist\CCSfMRIStudio-windows-x64.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign Windows binaries via SignPath
+        if: env.HAS_SIGNPATH == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug: ccs-fmri-studio
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: app-binaries
+          github-artifact-id: ${{ steps.upload-unsigned-windows.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 1800
+          output-artifact-directory: dist\signed-windows
+          parameters: |
+            version: ${{ needs.validate-release.outputs.version }}
+
+      - name: Stage signed Windows bundle
+        if: env.HAS_SIGNPATH == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem -Path "dist\signed-windows" -Filter "*.zip" -Recurse | Select-Object -First 1
+          if ($zip) {
+            Copy-Item $zip.FullName "dist\CCSfMRIStudio-windows-x64.zip" -Force
+          } else {
+            Compress-Archive -Path "dist\signed-windows\*" -DestinationPath "dist\CCSfMRIStudio-windows-x64.zip" -Force
+          }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
@@ -333,10 +371,15 @@ jobs:
         shell: bash
         run: |
           cd dist
-          sha256sum \
-            CCSfMRIStudio-macos.zip \
-            CCSfMRIStudio-windows-x64.zip \
-            CCSfMRIStudio-linux-x64.tar.gz > SHA256SUMS.txt
+          FILES=(
+            CCSfMRIStudio-macos.zip
+            CCSfMRIStudio-windows-x64.zip
+            CCSfMRIStudio-linux-x64.tar.gz
+          )
+          if [[ -f CCSfMRIStudio-macos.dmg ]]; then
+            FILES=(CCSfMRIStudio-macos.dmg "${FILES[@]}")
+          fi
+          sha256sum "${FILES[@]}" > SHA256SUMS.txt
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
@@ -345,7 +388,7 @@ jobs:
           name: ${{ steps.release_info.outputs.title }}
           prerelease: ${{ steps.release_info.outputs.prerelease == 'true' }}
           files: |
-            dist/CCSfMRIStudio-macos.zip
+            dist/CCSfMRIStudio-macos.*
             dist/CCSfMRIStudio-windows-x64.zip
             dist/CCSfMRIStudio-linux-x64.tar.gz
             dist/SHA256SUMS.txt
