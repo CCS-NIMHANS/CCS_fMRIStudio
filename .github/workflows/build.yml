@@ -233,11 +233,28 @@ jobs:
             Compress-Archive -Path "dist\signed-windows\*" -DestinationPath "dist\CCSfMRIStudio-windows-x64.zip" -Force
           }
 
+      - name: Build Microsoft Store MSIX package
+        shell: pwsh
+        env:
+          MS_STORE_IDENTITY_NAME: ${{ secrets.MS_STORE_IDENTITY_NAME }}
+          MS_STORE_PUBLISHER_ID: ${{ secrets.MS_STORE_PUBLISHER_ID }}
+          MS_STORE_PUBLISHER_DISPLAY_NAME: ${{ secrets.MS_STORE_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          pwsh -File scripts\package_windows_msix.ps1 `
+            -ReleaseDir "build\windows\x64\runner\Release" `
+            -OutputPath "dist\CCSfMRIStudio-windows-x64.msix" `
+            -AppName "CCS fMRI Studio" `
+            -ExeName "ccs_fmri_studio.exe" `
+            -Version "${{ needs.validate-release.outputs.version }}" `
+            -IconPath "windows\runner\resources\app_icon.ico"
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v7
         with:
           name: CCSfMRIStudio-windows
-          path: dist\CCSfMRIStudio-windows-x64.zip
+          path: |
+            dist\CCSfMRIStudio-windows-x64.zip
+            dist\CCSfMRIStudio-windows-x64.msix
           if-no-files-found: error
           retention-days: 14
 
@@ -374,6 +391,7 @@ jobs:
           FILES=(
             CCSfMRIStudio-macos.zip
             CCSfMRIStudio-windows-x64.zip
+            CCSfMRIStudio-windows-x64.msix
             CCSfMRIStudio-linux-x64.tar.gz
           )
           if [[ -f CCSfMRIStudio-macos.dmg ]]; then
@@ -390,6 +408,7 @@ jobs:
           files: |
             dist/CCSfMRIStudio-macos.*
             dist/CCSfMRIStudio-windows-x64.zip
+            dist/CCSfMRIStudio-windows-x64.msix
             dist/CCSfMRIStudio-linux-x64.tar.gz
             dist/SHA256SUMS.txt
           draft: false
