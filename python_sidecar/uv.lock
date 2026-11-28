@@ -44,6 +44,7 @@ version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "antspyx" },
+    { name = "matplotlib" },
     { name = "nibabel" },
     { name = "nilearn" },
     { name = "numpy" },
@@ -57,6 +58,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "antspyx", specifier = ">=0.6.0" },
+    { name = "matplotlib", specifier = ">=3.8.0" },
     { name = "nibabel", specifier = ">=5.2.0" },
     { name = "nilearn", specifier = ">=0.11.0" },
     { name = "numpy", specifier = ">=1.26.0" },

@@ -48,17 +48,17 @@
 
 | Platform | Package | Direct Download |
 | :--- | :--- | :--- |
-| **macOS** | Apple Silicon / Universal App ZIP (macOS 12+) | [CCSfMRIStudio-macos.zip](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-macos.zip) |
-| **Windows** | 64-bit Portable Desktop ZIP (Windows 10/11) | [CCSfMRIStudio-windows-x64.zip](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-windows-x64.zip) |
+| **macOS** | Apple Developer ID signed &amp; notarized DMG / App ZIP (macOS 12+) | [CCSfMRIStudio-macos.dmg](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-macos.dmg) · [CCSfMRIStudio-macos.zip](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-macos.zip) |
+| **Windows** | 64-bit Portable Desktop ZIP / MSIX (Windows 10/11) | [CCSfMRIStudio-windows-x64.zip](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-windows-x64.zip) · [CCSfMRIStudio-windows-x64.msix](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-windows-x64.msix) |
 | **Linux (x86_64)** | Portable Desktop Bundle (`.tar.gz`) | [CCSfMRIStudio-linux-x64.tar.gz](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-linux-x64.tar.gz) |
 
 > 📦 Checksums (`SHA256SUMS.txt`) and release assets are published on the **[GitHub Releases Page](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest)**.
 > 🔐 Free Windows code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/) (see [Code Signing Policy](CODE_SIGNING_POLICY.md)).
 
 <details>
-<summary><b>🍏 macOS Gatekeeper Setup &amp; 🐧 Linux Bundle Launch</b></summary>
+<summary><b>🍏 macOS Setup &amp; 🐧 Linux Bundle Launch</b></summary>
 
-**macOS (first launch):**
+**macOS:** Official CI releases are Apple Developer ID signed and notarized — open the `.dmg` and drag **CCS fMRI Studio** to `/Applications` (no terminal command needed). Only for local or ad-hoc unsigned builds, clear the quarantine flag first:
 ```sh
 xattr -rd com.apple.quarantine ~/Downloads/ccs_fmri_studio.app
 mv ~/Downloads/ccs_fmri_studio.app /Applications/
@@ -95,15 +95,17 @@ processed with ≤ 0.4.1.**
 - **Publication figures in the app:** a *Generate Publication Figures* button (Summary & Export) and a *Group Publication
   Figures* button (Stats → Group) write report-style 300-dpi PNG + SVG figures for a subject or a session/condition contrast.
 
-## ✨ What's New in v0.4.0
+<details>
+<summary>Previous Releases: v0.4.1, v0.4.0, v0.3.0, v0.2.0, v0.1.3, v0.1.2, v0.1.1 &amp; v0.1.0</summary>
 
+**v0.4.1**
+- **Nilearn Seed-to-Voxel GLM Voxelwise Denoising:** Updated `--mode seed-glm` (`nilearn_stats.py` / `results_dashboard.dart`) to accept `--confounds-tsv`, `--low-hz`, `--high-hz`, and `--tr`, regressing motion confounds and applying matching bandpass filtering inside `NiftiMasker` before Fisher-$z$ correlation.
+
+**v0.4.0**
 - **Linear-Interpolation Censoring & Effective DOF QC (`CensorMode::Interpolate`):** Replaces low-DOF flat-zero spike plateaus on high-motion scans with Power et al. (2014) intact-frame nuisance regression + linear interpolation before bandpass filtering, reports **Effective DOF remaining** and **Motion QC warnings**, and uses robust MAD scaling for Raw vs Clean BOLD traces.
 - **Pure-Rust Graph Theory Tab (`Graph Theory`):** Computes NaN-safe Weighted & Binary Global/Local Efficiency, Onnela Clustering ($C$), Path Length ($L$), Maslov-Sneppen Small-Worldness ($\sigma$), Newman Modularity ($Q$), Assortativity ($r$), Brandes Betweenness, Participation Coefficient ($P_i$), Within-Module $z_i$, **Density Sweep (5%–40%)**, and **Hub Classification Scatter ($P_i$ vs $z_i$)**, exporting `graph_metrics_nodal.csv` and `graph_metrics_global.json`.
 - **Advanced Nilearn Statistical Inference (`Stats (Nilearn)`):** Runs **Single-Subject Seed-to-Voxel GLM** (BH-FDR / Bonferroni thresholding, MNI cluster tables, and inline `plot_glass_brain` / `plot_stat_map` figures) plus **Group / Batch Connectivity Statistics** (edgewise FDR $t$-tests, NBS permutation clusters, Tangent-Space CV decoding, and `statsmodels.MixedLM`).
 - **Net Directed Transfer Entropy & Zoomed ANOVA Dynamics:** Adds **Net Flow (`TE i→j − TE j→i`)** toggle with mid-arc directional chevrons + **Sender vs Receiver** diverging bar chart, plus zoomed Y-axis scaling and Yeo-7 One-Way ANOVA (`F`, `p`) across intrinsic timescales and complexity.
-
-<details>
-<summary>Previous Releases: v0.3.0, v0.2.0, v0.1.3, v0.1.2, v0.1.1 &amp; v0.1.0</summary>
 
 **v0.3.0**
 - **Interactive Batch Analysis (`6. Batch`):** Scan a whole study root folder (`Patient_*/pre|post` or BIDS), add individual folders, or multi-select NIfTI/DICOM files into a searchable subject queue with checkboxes and per-subject file editors.

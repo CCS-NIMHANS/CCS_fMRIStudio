@@ -5,7 +5,7 @@ All notable changes to **CCS_fMRIStudio** are documented in this file.
 ## [0.5.0] - 2026-11-28
 
 Validity release following an external code review and benchmark against fMRIPrep 24.1.1 + nilearn
-(report: [`docs/validation/v0.5.0/REPORT.md`](docs/validation/v0.5.0/REPORT.md)). Results from v0.4.1 preprocessing should be regenerated.
+(report: [`docs/validation/v0.5.0/REPORT.md`](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/blob/v0.5.0/docs/validation/v0.5.0/REPORT.md) · [PDF](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/blob/v0.5.0/docs/validation/v0.5.0/REPORT.pdf)). Results from v0.4.1 preprocessing should be regenerated.
 
 ### Fixed (preprocessing, `python_sidecar/src/ccs_fmri_sidecar/preprocess.py`)
 - **Brain extraction added.** v0.4.1 registered the whole-head T1w to a skull-stripped template, compressing the
@@ -45,11 +45,9 @@ Validity release following an external code review and benchmark against fMRIPre
 - aCompCor voxel series are high-passed (DCT) before PCA.
 - **Modularity Q formula** fixed in `graph_theory.rs` and `connectivity.rs` (null term over all same-community pairs);
   v0.4.1 over-estimated Q by ~50–60 %. Graph thresholding uses positive correlations only (no |r|).
-- Timescale/complexity dynamics use the nuisance-cleaned, high-pass-only series.
-- `bench_denoise`: `--censor-mode` (default `interpolate`, as the GUI) and `--no-zscore`.
+- Time-series dynamics (ACW, LZC, SampEn, PLE) always use a continuous (censored-frame-interpolated), nuisance-cleaned, high-pass-only series, including when the default `spike` censoring is selected.
+- `bench_denoise`: `--censor-mode` (default `spike`, matching the GUI) and `--no-zscore`.
 - Exports `censor_mask.csv` and `confounds_used.csv`.
-- Time-series dynamics always use a continuous (censored-frame-interpolated) high-pass series, also when the
-  default spike censoring is selected.
 - aCompCor falls back to a Gram-matrix decomposition if the thin SVD returns non-finite values; non-finite
   confound matrices are rejected with an error.
 - Inputs are verified against nibabel (ITK silently zero-filled volumes from cloud-synced files still downloading).
@@ -61,7 +59,7 @@ Validity release following an external code review and benchmark against fMRIPre
   and their difference, within/between-network FC per subject, edge-wise FC, summary metrics, timescales by network.
   Runs below 30 residual DOF are excluded from group figures and listed in `group_inclusion.json`.
 - `raw_timeseries.csv` (pre-denoising ROI series) is exported with the results.
-- Validation report: [`docs/validation/v0.5.0/REPORT.md`](docs/validation/v0.5.0/REPORT.md).
+- Validation report: [`docs/validation/v0.5.0/REPORT.md`](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/blob/v0.5.0/docs/validation/v0.5.0/REPORT.md) ([PDF](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/blob/v0.5.0/docs/validation/v0.5.0/REPORT.pdf)).
 
 ### Fixed (statistics, `nilearn_stats.py`)
 - Seed maps: voxels are cleaned with exactly the same model as the seed (same confounds, censoring, DCT band) and

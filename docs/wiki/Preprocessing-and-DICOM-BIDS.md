@@ -53,7 +53,9 @@ Each row corresponds to one fMRI volume (`0..T-1`), with columns:
     $$\text{FD}_t = |\Delta t_x| + |\Delta t_y| + |\Delta t_z| + 50 \left(|\Delta r_x| + |\Delta r_y| + |\Delta r_z|\right)$$
   - `ants_fd`: duplicate of `framewise_displacement` kept for backward compatibility (not used as a regressor).
 
-### Real-World Run on `Patient_01/pre` (Apple Silicon, 24 GB RAM)
+### Historical Reference Run (v0.4.x) on `Patient_01/pre` (Apple Silicon, 24 GB RAM)
+
+> **Note:** The timings and dimensions below were recorded in v0.4.x (`MNI152NLin2009cAsym`, whole-head registration). Since v0.5.0, preprocessing targets 2 mm `MNI152NLin6Asym` (`91 × 109 × 91 × T`), runs in **80–90 s/run** with eroded deep-WM and ventricular-CSF masks, and is benchmarked in [`docs/validation/v0.5.0/REPORT.md`](../validation/v0.5.0/REPORT.md).
 
 - **Raw Inputs**: T1w `176 × 256 × 256` (`1.0 mm` iso), BOLD `64 × 64 × 40 × 450` (`3.44 × 3.44 × 4.25 mm`, `TR = 2.0 s`).
 - **MNI Outputs**: `bold_mni.nii` / `bold_mni.nii.gz` (`99 × 117 × 95 × 450`), `400` Schaefer ROIs, `6,450` WM mask voxels, `40,457` CSF mask voxels.

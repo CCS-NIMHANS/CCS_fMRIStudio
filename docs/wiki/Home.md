@@ -12,7 +12,7 @@ A visual, technical guide to **CCS fMRI Studio** — a cross-platform desktop fM
 ```mermaid
 flowchart LR
   A["1. Raw DICOM / BIDS Input<br/>Siemens .IMA, .nii, .nii.gz, .json"] --> B["2. DICOM Conversion<br/>dcm2niix -> t1w.nii.gz + bold.nii.gz<br/>RepetitionTime &amp; SliceTiming"]
-  B --> C["3. ANTsPy Preprocessing<br/>N4 Bias, Atropos WM/CSF,<br/>SyNQuick MNI152, BOLDRigid MoCo"]
+  B --> C["3. ANTsPy Preprocessing<br/>N4, Brain Extraction, Atropos WM/CSF,<br/>SyNQuick MNI152NLin6Asym, STC &amp; QC'd MoCo"]
   C --> D["4. Rust Core Engine<br/>memmap2 NIfTI, Schaefer-400,<br/>aCompCor, Simultaneous DCT Denoise"]
   D --> E["5. Connectivity &amp; Inspection<br/>400x400 FC, Sliding-Window dFC,<br/>Zero-Copy Ortho RGBA Slices"]
 ```
@@ -37,8 +37,8 @@ flowchart LR
 | Category | Formats / Outputs |
 | :--- | :--- |
 | **Raw Inputs** | Siemens `.IMA` / DICOM folders (`dcm2niix`), 3D/4D `.nii` and `.nii.gz`, BIDS `.json` sidecars (`RepetitionTime`, `SliceTiming`) |
-| **Preprocessed Artifacts** | `bold_mni.nii` (uncompressed float32 for zero-copy `memmap2`), `bold_mni.nii.gz`, `t1w_mni.nii.gz`, `wm_mask_mni.nii.gz`, `csf_mask_mni.nii.gz`, `schaefer400_mni.nii.gz`, `confounds.tsv`, `preprocess_report.json` |
-| **Rust Engine Outputs** | ROI denoised timeseries `.csv`, orthogonalized confounds `.csv`, benchmark JSON reports, and live RGBA slice pixel buffers |
+| **Preprocessed Artifacts** | `bold_mni.nii` (uncompressed float32 for zero-copy `memmap2`), optional `bold_mni.nii.gz` (`--write-gz`), `t1w_mni.nii.gz`, `brain_mask_mni.nii.gz`, `wm_mask_mni.nii.gz`, `csf_mask_mni.nii.gz`, `schaefer400_mni.nii.gz`, `confounds.tsv`, `parcel_coverage.csv`, `preprocess_report.json`, `qc_report.html` |
+| **Rust Engine Outputs** | `fc_matrix.csv`, `denoised_timeseries.csv`, `raw_timeseries.csv`, `censor_mask.csv`, `confounds_used.csv`, `biomarkers_summary.json`, `clinical_report.md`, and live RGBA slice pixel buffers |
 
 ---
 
