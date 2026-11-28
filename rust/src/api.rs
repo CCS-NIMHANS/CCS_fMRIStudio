@@ -3,14 +3,14 @@ use crate::connectivity::{
     lesion_network_mapping, static_fc_pearson,
 };
 use crate::denoise::{
-    compute_acompcor, load_confounds_tsv, load_confounds_with_fd, simultaneous_denoise,
+    compute_acompcor_filtered, load_confounds_tsv, load_confounds_with_fd,
     simultaneous_denoise_with_mode, CensorMode,
 };
 use crate::dynamics::{compute_sliding_dynamics_opt, one_way_anova_by_group, welch_psd};
 use crate::graph_theory::compute_full_graph_theory;
 use crate::info_theory::{
     compute_fc_histogram, compute_gcmi_matrix, compute_partial_correlation_ledoit_wolf,
-    compute_transfer_entropy_matrix,
+    compute_transfer_entropy_matrix_masked,
 };
 use crate::lesion::{
     apply_spherical_brush, compute_hemispheric_asymmetry, dilate_mask_3d, fill_holes_3d,
@@ -33,8 +33,13 @@ use std::time::Instant;
 struct CachedSession {
     raw_ts: Array2<f64>,
     clean_ts: Array2<f64>,
+    /// Nuisance-regressed + high-pass-only series (no low-pass) used for timescale/complexity
+    /// dynamics, so ACW/LZC/SampEn are not dictated by the 0.09 Hz low-pass edge.
+    clean_ts_hp: Array2<f64>,
     tr_sec: f64,
+    #[allow(dead_code)]
     bandpass_low_hz: f64,
+    #[allow(dead_code)]
     bandpass_high_hz: f64,
     roi_labels: Vec<String>,
     network_names: Vec<String>,
@@ -528,11 +533,11 @@ pub fn run_roi_denoise_pipeline(
     }
     if let Some(wm_p) = wm_mask_path {
         let wm_mask = load_mask_u8(Path::new(&wm_p))?;
-        confound_blocks.push(compute_acompcor(vol.view(), wm_mask.view(), 5)?);
+        confound_blocks.push(compute_acompcor_filtered(vol.view(), wm_mask.view(), 5, tr_sec, (low_hz > 0.0).then_some(low_hz))?);
     }
     if let Some(csf_p) = csf_mask_path {
         let csf_mask = load_mask_u8(Path::new(&csf_p))?;
-        confound_blocks.push(compute_acompcor(vol.view(), csf_mask.view(), 5)?);
+        confound_blocks.push(compute_acompcor_filtered(vol.view(), csf_mask.view(), 5, tr_sec, (low_hz > 0.0).then_some(low_hz))?);
     }
     let acompcor_ms = t2.elapsed().as_secs_f64() * 1000.0;
 
@@ -546,19 +551,21 @@ pub fn run_roi_denoise_pipeline(
     let t3 = Instant::now();
     let low_opt = if low_hz > 0.0 { Some(low_hz) } else { None };
     let high_opt = if high_hz > 0.0 { Some(high_hz) } else { None };
-    let clean_ts = simultaneous_denoise(
+    let den = simultaneous_denoise_with_mode(
         raw_ts.view(),
         combined_conf.as_ref().map(|c| c.view()),
         tr_sec,
         low_opt,
         high_opt,
         &scrub_indices,
+        CensorMode::Interpolate,
         true,
     )?;
+    let clean_kept = den.kept_ts();
     let denoise_ms = t3.elapsed().as_secs_f64() * 1000.0;
 
     let t4 = Instant::now();
-    let fc = static_fc_pearson(clean_ts.view())?;
+    let fc = static_fc_pearson(clean_kept.view())?;
     let fc_ms = t4.elapsed().as_secs_f64() * 1000.0;
 
     Ok(DenoisePipelineSummary {
@@ -1006,7 +1013,7 @@ pub fn run_lesion_aware_pipeline(
                 None => raw_wm,
             };
             if safe_wm.iter().any(|&v| v > 0) {
-                confound_blocks.push(compute_acompcor(vol.view(), safe_wm.view(), 5)?);
+                confound_blocks.push(compute_acompcor_filtered(vol.view(), safe_wm.view(), 5, tr_sec, (low_hz > 0.0).then_some(low_hz))?);
             }
         }
     }
@@ -1018,7 +1025,7 @@ pub fn run_lesion_aware_pipeline(
                 None => raw_csf,
             };
             if safe_csf.iter().any(|&v| v > 0) {
-                confound_blocks.push(compute_acompcor(vol.view(), safe_csf.view(), 5)?);
+                confound_blocks.push(compute_acompcor_filtered(vol.view(), safe_csf.view(), 5, tr_sec, (low_hz > 0.0).then_some(low_hz))?);
             }
         }
     }
@@ -1029,6 +1036,11 @@ pub fn run_lesion_aware_pipeline(
         let views: Vec<_> = confound_blocks.iter().map(|b| b.view()).collect();
         Some(concatenate(Axis(1), &views)?)
     };
+    if let Some(c) = &combined_conf {
+        if !c.iter().all(|v| v.is_finite()) {
+            bail!("Confound matrix contains non-finite values; check confounds.tsv and the WM/CSF masks");
+        }
+    }
 
     // Raw FC & raw carpet before denoising (CONN QC baseline).
     let raw_fc = static_fc_pearson(parc.timeseries.view())?;
@@ -1048,16 +1060,49 @@ pub fn run_lesion_aware_pipeline(
         mode_enum,
         true,
     )?;
+    let kept_rows = denoise_res.kept_rows.clone();
+    let clean_kept = denoise_res.kept_ts();
     let clean_ts = denoise_res.clean_ts;
     let n_regressors = denoise_res.n_regressors as u32;
     let dof_remaining = denoise_res.dof_remaining as u32;
+    let n_kept = kept_rows.len();
     let censor_mode_label = mode_enum.as_str().to_string();
+    let mut valid_frames = vec![false; nt];
+    for &r in &kept_rows {
+        valid_frames[r] = true;
+    }
 
-    let fc = static_fc_pearson(clean_ts.view())?;
+    // Same nuisance model but high-pass only, for timescale/complexity dynamics. Censored frames are
+    // linearly interpolated here (never zero-filled spike residuals) so autocorrelation-based
+    // measures see a continuous series.
+    let clean_ts_hp = simultaneous_denoise_with_mode(
+        parc.timeseries.view(),
+        combined_conf.as_ref().map(|c| c.view()),
+        tr_sec,
+        low_opt,
+        None,
+        &scrub_indices,
+        if mode_enum == CensorMode::None { CensorMode::None } else { CensorMode::Interpolate },
+        true,
+    )?
+    .clean_ts;
+
+    // All statistics use retained (uncensored) frames only (Power et al., 2014).
+    let fc = static_fc_pearson(clean_kept.view())?;
     let (clean_fc_hist, clean_fc_mean, clean_fc_sd) = compute_fc_histogram(fc.view(), 41);
-    let fc_partial = compute_partial_correlation_ledoit_wolf(clean_ts.view())?;
-    let fc_gcmi = compute_gcmi_matrix(clean_ts.view());
-    let fc_te = compute_transfer_entropy_matrix(clean_ts.view(), 1);
+    let fc_partial = compute_partial_correlation_ledoit_wolf(clean_kept.view())?;
+    let fc_gcmi = compute_gcmi_matrix(clean_kept.view());
+    let fc_te = compute_transfer_entropy_matrix_masked(clean_ts.view(), 1, Some(&valid_frames));
+    let n_intact_rois_now = (0..n_rois)
+        .filter(|&c| clean_kept.column(c).iter().all(|v| v.is_finite()))
+        .count();
+    let dof_warning = if (dof_remaining as usize) < 30 {
+        format!("CRITICAL: only {dof_remaining} residual degrees of freedom; FC estimates are unreliable. Widen the band (e.g. high_hz=0.1-0.15), use fewer confounds, or a coarser atlas.")
+    } else if (dof_remaining as usize) < n_intact_rois_now {
+        format!("WARNING: {dof_remaining} residual DOF < {n_intact_rois_now} ROIs; partial correlation and multivariate measures are rank-deficient (shrinkage-dominated).")
+    } else {
+        String::new()
+    };
 
     let graph = compute_nan_safe_graph_metrics(fc.view(), 0.0, None)?;
 
@@ -1149,6 +1194,10 @@ pub fn run_lesion_aware_pipeline(
                 "censor_mode": censor_mode_label,
                 "n_regressors": n_regressors,
                 "dof_remaining": dof_remaining,
+                "n_frames_retained": n_kept,
+                "n_frames_censored": nt - n_kept,
+                "dof_warning": dof_warning,
+                "statistics_use_retained_frames_only": true,
                 "raw_fc_mean": raw_fc_mean,
                 "raw_fc_sd": raw_fc_sd,
                 "clean_fc_mean": clean_fc_mean,
@@ -1167,6 +1216,7 @@ pub fn run_lesion_aware_pipeline(
                 "mean_te_bits": mean_te_bits,
                 "total_ms": total_ms,
             });
+            let dof_warning_md = if dof_warning.is_empty() { "OK".to_string() } else { dof_warning.clone() };
             let report_md = format!(
                 "# CCS fMRI Studio — Clinical & Connectivity Report\n\n\
                 | Metric | Value |\n\
@@ -1175,7 +1225,8 @@ pub fn run_lesion_aware_pipeline(
                 | **Timepoints / TR** | {nt} volumes @ {tr_sec:.2} s |\n\
                 | **Intact / Total ROIs** | {}/{} (Excluded: {}) |\n\
                 | **CONN QC (Raw FC -> Clean FC)** | {raw_fc_mean:.3} ± {raw_fc_sd:.3} → {clean_fc_mean:.3} ± {clean_fc_sd:.3} |\n\
-                | **Mean FD / Scrubbed** | {mean_fd_mm:.3} mm / {pct_scrubbed:.1}% ({censor_mode_label}, DOF: {dof_remaining}/{nt}) |\n\
+                | **Mean FD / Scrubbed** | {mean_fd_mm:.3} mm / {pct_scrubbed:.1}% ({censor_mode_label}; {n_kept}/{nt} frames retained; residual DOF: {dof_remaining}) |\n\
+                | **DOF check** | {dof_warning_md} |\n\
                 | **Lesion Volume** | {:.2} mL ({dominant_hemi}) |\n\
                 | **Mean \\|Pearson FC\\|** | {mean_abs_fc:.4} |\n\
                 | **Mean \\|Partial FC\\| (Ledoit-Wolf)** | {mean_abs_partial_fc:.4} |\n\
@@ -1187,7 +1238,7 @@ pub fn run_lesion_aware_pipeline(
                 | **Laterality Index** | {laterality_index:.4} |\n\
                 | **Lesion-Seed Mean \\|r\\|** | {lesion_seed_mean_abs_r:.4} |\n\
                 | **Rust Processing Time** | {total_ms:.1} ms (mmap: {}) |\n\n\
-                Generated files: `fc_matrix.csv`, `partial_fc_matrix.csv`, `gcmi_matrix.csv`, `te_matrix.csv`, `denoised_timeseries.csv`, `biomarkers_summary.json`, `clinical_report.md`\n",
+                Generated files: `fc_matrix.csv`, `partial_fc_matrix.csv`, `gcmi_matrix.csv`, `te_matrix.csv`, `denoised_timeseries.csv` (all frames; censored frames interpolated for display), `censor_mask.csv` (1 = retained), `confounds_used.csv`, `biomarkers_summary.json`, `clinical_report.md`. All statistics use retained frames only.\n",
                 graph.n_intact_nodes,
                 n_rois,
                 graph.n_excluded_nodes,
@@ -1206,6 +1257,17 @@ pub fn run_lesion_aware_pipeline(
                 &summary_json,
                 &report_md,
             )?;
+            write_matrix_csv(&Path::new(dir.trim()).join("censor_mask.csv"), {
+                let mut m = Array2::<f64>::zeros((nt, 1));
+                for &r in &kept_rows {
+                    m[[r, 0]] = 1.0;
+                }
+                m
+            }.view())?;
+            match &combined_conf {
+                Some(c) => write_matrix_csv(&Path::new(dir.trim()).join("confounds_used.csv"), c.view())?,
+                None => write_matrix_csv(&Path::new(dir.trim()).join("confounds_used.csv"), Array2::<f64>::zeros((nt, 0)).view())?,
+            }
             Some(dir.trim().to_string())
         }
         _ => None,
@@ -1219,6 +1281,7 @@ pub fn run_lesion_aware_pipeline(
         *guard = Some(CachedSession {
             raw_ts: parc.timeseries,
             clean_ts,
+            clean_ts_hp,
             tr_sec,
             bandpass_low_hz: low_hz,
             bandpass_high_hz: high_hz,
@@ -1500,10 +1563,11 @@ pub fn compute_cached_dynamics(
         .as_ref()
         .context("Run denoising in Step 4 before computing dynamics")?;
 
-    let skip_bandpass = (low_hz - sess.bandpass_low_hz).abs() < 1e-3
-        && (high_hz - sess.bandpass_high_hz).abs() < 1e-3;
+    // Time-domain metrics (ACW, LZC, SampEn) are computed on the nuisance-cleaned, high-pass-only
+    // series; spectral metrics are restricted to [low_hz, high_hz] inside calc_window_metrics.
+    let skip_bandpass = true;
     let rows = compute_sliding_dynamics_opt(
-        sess.clean_ts.view(),
+        sess.clean_ts_hp.view(),
         sess.tr_sec,
         (window_len as usize).max(16),
         (step as usize).max(1),
@@ -1812,3 +1876,4 @@ pub fn compute_graph_theory(
         exported_json_path,
     })
 }
+

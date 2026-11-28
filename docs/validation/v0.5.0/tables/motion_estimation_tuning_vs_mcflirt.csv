@@ -1,0 +1,13 @@
+run,brainmask_ref,variant,fd_r,ratio,n05_app,n05_ref
+sub-02,False,current_2lvl_rs0.5,0.879,1.175,3,2
+sub-02,False,dense_3lvl,0.864,1.166,4,2
+sub-02,False,dense_2lvl_smooth,0.685,1.721,14,2
+sub-02,True,current_2lvl_rs0.5,0.533,2.603,64,2
+sub-02,True,dense_3lvl,0.629,2.019,31,2
+sub-02,True,dense_2lvl_smooth,0.089,9.825,203,2
+sub-07,False,current_2lvl_rs0.5,0.891,1.164,61,39
+sub-07,False,dense_3lvl,0.888,1.145,53,39
+sub-07,False,dense_2lvl_smooth,0.721,1.702,133,39
+sub-07,True,current_2lvl_rs0.5,0.838,1.253,64,39
+sub-07,True,dense_3lvl,0.858,1.221,70,39
+sub-07,True,dense_2lvl_smooth,0.217,4.363,239,39

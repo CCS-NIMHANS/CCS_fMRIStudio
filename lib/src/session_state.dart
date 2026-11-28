@@ -56,7 +56,7 @@ class FolderScanResult {
 }
 
 class FmriSessionState extends ChangeNotifier {
-  static const String bundleVersion = '0.4.1';
+  static const String bundleVersion = '0.5.0';
 
   static const List<String> _bundledAssets = [
     'assets/templates/registry.json',
@@ -68,6 +68,8 @@ class FmriSessionState extends ChangeNotifier {
     'python_sidecar/src/ccs_fmri_sidecar/preprocess.py',
     'python_sidecar/src/ccs_fmri_sidecar/lesion_segment.py',
     'python_sidecar/src/ccs_fmri_sidecar/templates.py',
+    'python_sidecar/src/ccs_fmri_sidecar/tf_templates.py',
+    'python_sidecar/src/ccs_fmri_sidecar/qc_report.py',
     'python_sidecar/src/ccs_fmri_sidecar/group_lmm.py',
     'python_sidecar/src/ccs_fmri_sidecar/nilearn_stats.py',
     'python_sidecar/src/ccs_fmri_sidecar/benchmark_vs_nilearn.py',

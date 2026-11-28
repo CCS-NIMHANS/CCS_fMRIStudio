@@ -24,18 +24,24 @@ uv run python -m ccs_fmri_sidecar.dicom_convert \
 
 ```mermaid
 flowchart TD
-  T1["Raw T1w (.nii.gz, float32)"] --> N4["1. N4 Bias Correction<br/>ants.n4_bias_field_correction"]
-  N4 --> SEG["2. Atropos 3-Class Tissue Seg<br/>CSF (lowest mean) &amp; WM (highest mean)<br/>1-voxel morphological erosion"]
-  N4 --> MNIREG["3. T1w -> MNI152NLin2009cAsym (2mm)<br/>antsRegistrationSyNQuick[s] / SyN"]
-
-  BOLD["Raw 4D BOLD (.nii.gz, float32)"] --> MOCO["4. 4D Motion Correction<br/>ants.motion_correction (BOLDRigid)<br/>6 DOF + derivs + Power FD -> confounds.tsv"]
-  MOCO --> MEAN["5. Mean BOLD -> T1w Rigid Coregistration"]
-  MEAN --> WARP["6. Single-Interpolation 4D Warp to MNI<br/>Composed [MNI warp, MNI affine, BOLD->T1]<br/>Outputs bold_mni.nii + bold_mni.nii.gz"]
+  T1["Raw T1w"] --> N4["1. N4 bias correction"]
+  N4 --> BET["2. Brain extraction<br/>head-to-head SyN to MNI152NLin6Asym,<br/>back-projected template brain mask, N4 in mask"]
+  BET --> SEG["3. Atropos 3-class on winsorised brain<br/>WM P&gt;0.9 eroded, ventricular CSF P&gt;0.9"]
+  BET --> MNIREG["4. Brain-to-brain SyNQuick to MNI152NLin6Asym"]
+  BOLD["Raw 4D BOLD"] --> STC["5. Slice-timing correction (Fourier, mid-TR)"]
+  STC --> MOCO["6. Per-volume rigid registration to mean BOLD<br/>quality-checked, parallel; FD -> confounds.tsv"]
+  STC --> COREG["7. BOLD reference -> T1w brain (rigid)"]
+  MOCO --> WARP["8. One interpolation per volume:<br/>normalisation ∘ coregistration ∘ motion -> 2 mm MNI152NLin6Asym"]
+  COREG --> WARP
   MNIREG --> WARP
-  SEG --> MASKWARP["Warp eroded WM &amp; CSF masks to MNI<br/>(nearestNeighbor)"]
+  SEG --> MASKWARP["WM / CSF / GM / brain masks -> MNI"]
   MNIREG --> MASKWARP
-  WARP --> SCH["7. Resample Schaefer-400 2mm Atlas<br/>onto bold_mni grid"]
+  WARP --> SCH["9. Schaefer-400 in native FSL MNI152 2 mm grid + parcel EPI coverage"]
+  WARP --> QC["10. qc_report.html + preprocess_report.json QC block"]
 ```
+
+> **v0.5.0 note:** versions ≤ 0.4.1 registered the whole-head T1w to a skull-stripped template and built aCompCor masks
+> from a whole-head segmentation; their outputs should be regenerated. See `CHANGELOG.md`.
 
 ### Confounds Schema (`confounds.tsv`)
 
@@ -45,7 +51,7 @@ Each row corresponds to one fMRI volume (`0..T-1`), with columns:
 - **Motion Summary**:
   - `framewise_displacement`: Power et al. (2012) FD on a 50 mm radius sphere:
     $$\text{FD}_t = |\Delta t_x| + |\Delta t_y| + |\Delta t_z| + 50 \left(|\Delta r_x| + |\Delta r_y| + |\Delta r_z|\right)$$
-  - `ants_fd`: ANTsPy's native landmark displacement FD for cross-checking.
+  - `ants_fd`: duplicate of `framewise_displacement` kept for backward compatibility (not used as a regressor).
 
 ### Real-World Run on `Patient_01/pre` (Apple Silicon, 24 GB RAM)
 

@@ -2,6 +2,63 @@
 
 All notable changes to **CCS_fMRIStudio** are documented in this file.
 
+## [0.5.0] - 2026-11-28
+
+Validity release following an external code review and benchmark against fMRIPrep 24.1.1 + nilearn
+(report: [`docs/validation/v0.5.0/REPORT.md`](docs/validation/v0.5.0/REPORT.md)). Results from v0.4.1 preprocessing should be regenerated.
+
+### Fixed (preprocessing, `python_sidecar/src/ccs_fmri_sidecar/preprocess.py`)
+- **Brain extraction added.** v0.4.1 registered the whole-head T1w to a skull-stripped template, compressing the
+  head into the template brain (T1w-template r ≈ 0.02–0.10). The T1w is now skull-stripped by head-to-head SyN to
+  MNI152NLin6Asym and back-warping the template brain mask; normalisation is brain-to-brain (r ≈ 0.74–0.80,
+  brain-mask Dice ≈ 0.99, on par with fMRIPrep).
+- **Tissue masks for aCompCor.** Atropos now runs on the skull-stripped, intensity-winsorised brain; WM (P>0.9, eroded)
+  and ventricular CSF (P>0.9, ≥5 mm from the brain edge) masks replace the v0.4.1 masks that were mostly grey matter
+  ("CSF") and scalp ("WM"), which had turned aCompCor into an undisclosed global-signal regression.
+- **Template/atlas space.** Default space is MNI152NLin6Asym (TemplateFlow), the native space of the nilearn
+  Schaefer-2018 atlas, so the atlas is no longer applied to a different template (v0.4.1 used nilearn's 2009a
+  symmetric template while labelling it MNI152NLin2009cAsym).
+- **Slice-timing correction** (Fourier phase shift to mid-TR) when `SliceTiming` is present.
+- **True single interpolation:** motion, coregistration and normalisation transforms are composed per volume.
+- **Motion estimation rewritten:** per-volume rigid registration to the mean BOLD with quality control (registered
+  volume must match the reference at least as well as the unregistered one, displacement must be plausible), up to 8
+  attempts with alternative settings in fresh worker processes, and a hard error if any volume still fails. ANTs'
+  `motion_correction` (used in v0.4.1) diverged silently on several validation runs.
+- **Memory-safety fix:** BOLD data are passed between steps as Python-owned arrays; numpy views of ANTs image buffers
+  produced corrupted volumes (mean ≈ 0) after slice-timing correction. A volume-intensity sanity check aborts the run if
+  this ever recurs.
+- **Speed:** motion estimation and resampling run in parallel worker processes (`CCS_PREPROC_WORKERS` to override);
+  the gzipped `bold_mni.nii.gz` copy is now optional (`--write-gz`).
+- **Robustness:** disk-space pre-check; implausible motion, failed brain extraction or segmentation abort the run with a
+  clear error instead of writing corrupt confounds; fixed ANTs random seed (`--seed`, `--deterministic`).
+- **Per-run `qc_report.html`** (fMRIPrep-style): alignment overlays, tissue masks, motion/FD/DVARS, carpet plot, parcel
+  coverage and an auto-generated methods paragraph.
+- **QC block** in `preprocess_report.json` (template correlation, brain-mask Dice, tissue volumes, mask sizes, per-parcel
+  EPI coverage in `parcel_coverage.csv`, warnings).
+
+### Fixed (Rust core)
+- FD-censored frames are now **excluded** from FC, partial correlation, GCMI, TE and graph metrics.
+- Default censoring model is now `spike`: nuisance + DCT band-pass + one regressor per censored frame fitted
+  simultaneously, i.e. the model is fitted on retained frames only (equivalent to AFNI `3dTproject -cenmode KILL`).
+  `interpolate` (Power et al. 2014) remains available; both drop censored frames from statistics.
+- Residual DOF = retained frames − rank(design on retained frames); DOF warnings in the report.
+- aCompCor voxel series are high-passed (DCT) before PCA.
+- **Modularity Q formula** fixed in `graph_theory.rs` and `connectivity.rs` (null term over all same-community pairs);
+  v0.4.1 over-estimated Q by ~50–60 %. Graph thresholding uses positive correlations only (no |r|).
+- Timescale/complexity dynamics use the nuisance-cleaned, high-pass-only series.
+- `bench_denoise`: `--censor-mode` (default `interpolate`, as the GUI) and `--no-zscore`.
+- Exports `censor_mask.csv` and `confounds_used.csv`.
+- Time-series dynamics always use a continuous (censored-frame-interpolated) high-pass series, also when the
+  default spike censoring is selected.
+- aCompCor falls back to a Gram-matrix decomposition if the thin SVD returns non-finite values; non-finite
+  confound matrices are rejected with an error.
+- Inputs are verified against nibabel (ITK silently zero-filled volumes from cloud-synced files still downloading).
+
+### Fixed (statistics, `nilearn_stats.py`)
+- Seed maps: voxels are cleaned with exactly the same model as the seed (same confounds, censoring, DCT band) and
+  z = atanh(r)·√(DOF−3) instead of √(T−3) (v0.4.1 inflated z ~2–3×, yielding 38–70 k "significant" voxels per seed).
+  Seed maps refuse to run when residual DOF < 10. The anatomical brain mask from preprocessing is used as the voxel mask.
+
 ## [0.4.1] - 2026-11-22
 
 ### Improved

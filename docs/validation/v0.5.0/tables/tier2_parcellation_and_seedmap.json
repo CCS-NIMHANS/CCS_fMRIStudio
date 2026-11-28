@@ -1,0 +1,10 @@
+{
+ "nilearn_masker_s": 4.108793333987705,
+ "roi_min_r": 0.9999999999509676,
+ "roi_max_abs_rel_diff": 4.4046350735833795e-08,
+ "rust_parcellation_ms": 19.3,
+ "seed_map_spatial_r": 0.32296424816618247,
+ "seed_map_top10pct_dice": 0.27095180385942014,
+ "app_n_fdr_voxels": 6829,
+ "app_residual_dof": 69
+}

@@ -1,5 +1,33 @@
 # 4. Benchmarks & Validation
 
+## v0.5.0 validation (current)
+
+The full report is [**docs/validation/v0.5.0/REPORT.md**](../validation/v0.5.0/REPORT.md) ([PDF](../validation/v0.5.0/REPORT.pdf)).
+It covers 25 runs from OpenNeuro ds003768 (EEG-fMRI with 30-s sleep scoring) and ds006110 (PsiConnect, before and after psilocybin, across rest, movie, music and meditation).
+
+| Tier | Gold standard | Result |
+| :--- | :--- | :--- |
+| 1. Preprocessing | fMRIPrep 24.1.1 | brain-mask Dice 0.987 (0.985–0.989); mean-BOLD spatial r 0.72; FD r 0.81 (app FD ≈ 1.27× MCFLIRT's) |
+| 2. Time-series / FC engine | nilearn 0.14, identical inputs | ROI means identical (min r > 0.99999999; 19 ms vs 4.1 s); denoising identical given the same design in 34/37 runs; FC r 0.95 vs nilearn Butterworth; ACW identical to NumPy |
+| 3. End-to-end | fMRIPrep + nilearn (24P + aCompCor + scrubbing) | FC r 0.68 (DOF ≥ 30), network-matrix r 0.87, identical network segregation; same-run agreement 0.60 > test-retest 0.46 (app) / 0.54 (reference) |
+| 4. Biological concordance | same | Sleep (N1+N2 vs wake): BOLD amplitude ↑ in 3/3 subjects with both pipelines, ΔFC r 0.63. Psilocybin: within-network FC ↓ in 4/4 conditions with both engines, ΔFC r 0.88–0.94 |
+| Runtime | fMRIPrep ≈ 60 min / subject (emulated) | 80–90 s per run on a 14-core Apple Silicon Mac |
+
+| Figure | |
+| :--- | :--- |
+| ![](../validation/v0.5.0/figures/Fig5_before_after_denoising.png) | Before/after denoising: carpet plots, FC distributions, QC-FC (app and fMRIPrep + nilearn) |
+| ![](../validation/v0.5.0/figures/Fig7_sleep_concordance.png) | Sleep-stage concordance |
+| ![](../validation/v0.5.0/figures/Fig9_psilocybin_concordance.png) | Psilocybin concordance |
+
+The planned next steps are an AFNI `3dROIstats` / `3dTproject` benchmark and a sample of 20 or more subjects from two or more sites, run on a Linux server.
+
+---
+
+## Historical (v0.4.x) Rust-core speed benchmarks
+
+> The preprocessing numbers below were measured with v0.4.1. That version registered a skull-on T1w to a brain-only template and built aCompCor masks from a whole-head segmentation, which v0.5.0 fixes. Treat its preprocessing outputs as superseded. The Rust parcellation, denoising and FC timings remain representative.
+
+
 All preprocessing, speedups, peak RAM measurements, and numerical parity tests were verified end-to-end on clinical resting-state fMRI + T1w DICOM data (`Patient_01/pre`, Siemens 3T MR-PET, NIMHANS) on an Apple Silicon MacBook Pro (24 GB RAM).
 
 ---

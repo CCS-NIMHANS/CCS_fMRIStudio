@@ -36,7 +36,14 @@ Applying temporal bandpass filtering and nuisance regression sequentially can re
    Singular vectors of $X$ with $\sigma_i > 10^{-10} \sigma_{\max}$ form an orthonormal basis $Q \in \mathbb{R}^{T \times r}$.
 3. **Single-Step Projection**:
    $$Y_{\text{clean}} = Y - Q (Q^T Y)$$
-   followed by optional sample z-scoring (`ddof = 1`).
+   followed by optional sample z-scoring (`ddof = 1`) over retained frames.
+4. **Censoring and DOF (v0.5.0):**
+   - The default mode `spike` fits the whole design on retained frames only. This is mathematically equivalent to AFNI `3dTproject -cenmode KILL` and to `nilearn.signal.clean` with `sample_mask` and the same regressors.
+   - `interpolate` (Power et al., 2014) fits the nuisance model on retained frames, linearly interpolates the censored frames and then band-passes.
+   - In every mode, censored frames are **excluded** from FC, partial correlation, GCMI, TE and graph metrics. They are reported in `censor_mask.csv`.
+   - Residual DOF = retained frames − rank(design on retained frames). The report warns when DOF < 30 or DOF < number of ROIs.
+5. **aCompCor:** WM/CSF voxel series are DCT high-passed and detrended before the SVD. A Gram-matrix fallback handles non-convergent SVDs.
+6. **Graph metrics:** positive-weight proportional thresholding; Newman modularity for the Yeo partition, with the null term over all same-community pairs.
 
 ---
 

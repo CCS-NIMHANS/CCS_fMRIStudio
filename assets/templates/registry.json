@@ -1,18 +1,32 @@
 {
   "mni152_stereotaxic_reference": {
-    "shape_2mm": [99, 117, 95],
-    "zooms_mm": [2.0, 2.0, 2.0],
-    "origin_mm": [-98.0, -134.0, -72.0]
+    "space": "MNI152NLin6Asym",
+    "shape_2mm": [
+      91,
+      109,
+      91
+    ],
+    "zooms_mm": [
+      2.0,
+      2.0,
+      2.0
+    ],
+    "origin_mm": [
+      -90.0,
+      -126.0,
+      -72.0
+    ],
+    "source": "TemplateFlow tpl-MNI152NLin6Asym (FSL MNI152 nonlinear 6th generation)"
   },
   "templates": {
     "mni152_adult": {
-      "display_name": "ICBM 152 Nonlinear 2009c Asymmetric (MNI152NLin2009cAsym, 2mm)",
+      "display_name": "FSL MNI152 nonlinear 6th generation (MNI152NLin6Asym; 1 mm registration, 2 mm output)",
       "cohort": "Adult TBI / Mixed Ages (18-43y)",
       "modality": "T1w",
-      "bundled_filename": "MNI152NLin2009cAsym_2mm.nii.gz",
-      "auto_fetch": "nilearn_mni152_2mm",
+      "bundled_filename": "tpl-MNI152NLin6Asym/tpl-MNI152NLin6Asym_res-01_T1w.nii.gz",
+      "auto_fetch": "templateflow",
       "recommended_lesion_mode": "cfm",
-      "notes": "Standard adult MNI stereotaxic space compatible with Schaefer, Yeo, and Harvard-Oxford atlases."
+      "notes": "Default space since v0.5.0: native space of the Schaefer-2018/Yeo/Harvard-Oxford FSL atlases, so no atlas resampling is needed. Brain extraction uses the whole-head template; normalisation is brain-to-brain."
     },
     "older_adult_stroke": {
       "display_name": "Rorden Clinical Toolbox Older-Adult T1/T2 Template (2mm MNI-aligned)",

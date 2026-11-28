@@ -215,18 +215,26 @@ pub fn compute_nan_safe_graph_metrics(
 
     let modularity_q = if let Some(labels) = community_labels {
         if total_w2 > 1e-12 {
-            let mut q_sum = 0.0_f64;
+            // Newman weighted modularity for a fixed partition; null term over all
+            // same-community pairs (not only connected ones).
+            let n_comm = labels.iter().copied().max().map_or(0, |m| m + 1);
+            let mut w_in = vec![0.0_f64; n_comm];
+            let mut s_c = vec![0.0_f64; n_comm];
             for ui in 0..n_intact {
                 let cu = labels[intact_nodes[ui]];
+                s_c[cu] += strengths[ui];
                 for &(vi, w) in &adj[ui] {
                     if labels[intact_nodes[vi]] == cu {
-                        q_sum += w - (strengths[ui] * strengths[vi]) / total_w2;
+                        w_in[cu] += w;
                     }
                 }
-                // Diagonal i==j contribution
-                q_sum -= (strengths[ui] * strengths[ui]) / total_w2;
             }
-            Some(q_sum / total_w2)
+            Some(
+                (0..n_comm)
+                    .map(|c| w_in[c] - s_c[c] * s_c[c] / total_w2)
+                    .sum::<f64>()
+                    / total_w2,
+            )
         } else {
             Some(0.0)
         }

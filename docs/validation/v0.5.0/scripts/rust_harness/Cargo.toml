@@ -1,0 +1,13 @@
+[package]
+name = "ccs_review_harness"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+ccs_fmri_core = { path = "/Users/arunsasidharan/Code/ActiveProjects/CCS_fMRIStudio/rust" }
+anyhow = "1"
+ndarray = "0.17"
+
+[profile.release]
+lto = "thin"

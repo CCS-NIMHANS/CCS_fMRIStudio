@@ -2,6 +2,9 @@
 
 A visual, technical guide to **CCS fMRI Studio** — a cross-platform desktop fMRI preprocessing, denoising, parcellation, and EEG-style timeseries/connectivity workbench powered by **Flutter + Rust + an embedded ANTsPy/nilearn Python sidecar** without FSL, AFNI, or Docker dependencies.
 
+
+> 📄 **New in v0.5.0:** [Validation Report](../validation/v0.5.0/REPORT.md) ([PDF](../validation/v0.5.0/REPORT.pdf)): benchmarks against fMRIPrep and nilearn, plus concordance of sleep and psilocybin effects.
+
 ---
 
 ## End-to-End Workflow Map
@@ -23,7 +26,7 @@ flowchart LR
 | [**1. Architecture & Hybrid Engine**](Architecture-and-Hybrid-Engine.md) | Flutter UI, `flutter_rust_bridge` v2 FFI, Rust `memmap2` + `faer` + `rayon` engine, `uv` Python sidecar, and 24 GB RAM safeguards |
 | [**2. Preprocessing & DICOM / BIDS**](Preprocessing-and-DICOM-BIDS.md) | `dcm2niix` Siemens `.IMA` conversion, ANTsPy N4 bias correction, Atropos segmentation, `SyNQuick` MNI152, rigid motion correction, and `confounds.tsv` |
 | [**3. Rust Denoising & Connectivity**](Rust-Denoising-and-Connectivity.md) | Parallel Schaefer parcellation, CONN-style WM/CSF aCompCor, simultaneous orthogonalized DCT bandpass + scrubbing projection, static/dynamic FC, and RGBA slice rendering |
-| [**4. Benchmarks & Validation**](Benchmarks-and-Validation.md) | Verified 3-trial `Patient_01/pre` timings, `13.66x` end-to-end / `157.91x` parcellation speedups, `1.83x` peak RSS reduction, and `r > 0.99999999999` parity vs. `nilearn` |
+| [**4. Benchmarks & Validation**](Benchmarks-and-Validation.md) | **[v0.5.0 Validation Report](../validation/v0.5.0/REPORT.md)**: fMRIPrep / nilearn benchmarks, before/after denoising, sleep & psilocybin concordance; Rust-core speed benchmarks |
 | [**5. Building & Releasing (3 OSes)**](Building-and-Releasing.md) | Local macOS/Linux/Windows compilation, `flutter_rust_bridge_codegen`, GitHub Actions 3-OS release pipeline, and SHA-256 verification |
 | [**6. TBI & Stroke Lesion Workflows**](TBI-and-Stroke-Lesion-Workflows.md) | Auto-segmentation + Flutter 3D mask editor, CFM & Enantiomorphic registration, clinical templates, lesion-safe aCompCor, NaN-safe graph & LMM |
 
