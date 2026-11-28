@@ -3,7 +3,7 @@ use ccs_fmri_core::connectivity::{
     compute_homotopic_and_laterality, compute_nan_safe_graph_metrics, detect_schaefer_hemispheres,
     lesion_network_mapping, static_fc_pearson,
 };
-use ccs_fmri_core::denoise::{compute_acompcor, load_confounds_tsv, simultaneous_denoise};
+use ccs_fmri_core::denoise::{compute_acompcor_filtered, load_confounds_tsv, simultaneous_denoise_with_mode, CensorMode};
 use ccs_fmri_core::lesion::{subtract_lesion_from_mask, summarize_lesion};
 use ccs_fmri_core::nifti_io::{load_atlas_i32, load_bold_volume, load_mask_u8};
 use ccs_fmri_core::parcellation::extract_roi_timeseries_lesion_aware;
@@ -46,8 +46,12 @@ struct Args {
     fd_threshold: f64,
     #[arg(long, default_value_t = 5)]
     acompcor_comps: usize,
-    #[arg(long, default_value_t = true)]
-    zscore: bool,
+    /// Disable z-scoring of the cleaned series (z-scoring is on by default).
+    #[arg(long, default_value_t = false)]
+    no_zscore: bool,
+    /// Censoring mode: spike (default; simultaneous, = 3dTproject -cenmode KILL), interpolate or none.
+    #[arg(long, default_value = "spike")]
+    censor_mode: String,
     #[arg(long)]
     out_json: Option<PathBuf>,
     #[arg(long)]
@@ -150,7 +154,7 @@ fn main() -> Result<()> {
                 None => wm.clone(),
             };
             if safe_wm.iter().any(|&v| v > 0) {
-                conf_blocks.push(compute_acompcor(vol.view(), safe_wm.view(), args.acompcor_comps)?);
+                conf_blocks.push(compute_acompcor_filtered(vol.view(), safe_wm.view(), args.acompcor_comps, tr_sec, (args.low_hz > 0.0).then_some(args.low_hz))?);
             }
         }
     }
@@ -161,7 +165,7 @@ fn main() -> Result<()> {
                 None => csf.clone(),
             };
             if safe_csf.iter().any(|&v| v > 0) {
-                conf_blocks.push(compute_acompcor(vol.view(), safe_csf.view(), args.acompcor_comps)?);
+                conf_blocks.push(compute_acompcor_filtered(vol.view(), safe_csf.view(), args.acompcor_comps, tr_sec, (args.low_hz > 0.0).then_some(args.low_hz))?);
             }
         }
     }
@@ -182,19 +186,22 @@ fn main() -> Result<()> {
     let t3 = Instant::now();
     let low_opt = if args.low_hz > 0.0 { Some(args.low_hz) } else { None };
     let high_opt = if args.high_hz > 0.0 { Some(args.high_hz) } else { None };
-    let clean_ts = simultaneous_denoise(
+    let den = simultaneous_denoise_with_mode(
         parc.timeseries.view(),
         combined_conf.as_ref().map(|c| c.view()),
         tr_sec,
         low_opt,
         high_opt,
         &scrub_indices,
-        args.zscore,
+        CensorMode::from_str_opt(Some(&args.censor_mode)),
+        !args.no_zscore,
     )?;
+    let clean_kept = den.kept_ts();
+    let clean_ts = den.clean_ts;
     let denoise_ms = t3.elapsed().as_secs_f64() * 1000.0;
 
     let t4 = Instant::now();
-    let fc = static_fc_pearson(clean_ts.view())?;
+    let fc = static_fc_pearson(clean_kept.view())?;
     let graph = compute_nan_safe_graph_metrics(fc.view(), 0.0, None)?;
     let fc_ms = t4.elapsed().as_secs_f64() * 1000.0;
 

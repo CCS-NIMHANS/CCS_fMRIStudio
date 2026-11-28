@@ -164,11 +164,28 @@ pub fn compute_gcmi_matrix(ts: ArrayView2<'_, f64>) -> Array2<f64> {
 
 /// Directed Gaussian-Copula Transfer Entropy `TE(i -> j) = I(X_{t-lag}; Y_t | Y_{t-lag})` in bits.
 pub fn compute_transfer_entropy_matrix(ts: ArrayView2<'_, f64>, lag: usize) -> Array2<f64> {
-    let (nt, n_rois) = ts.dim();
+    compute_transfer_entropy_matrix_masked(ts, lag, None)
+}
+
+/// Gaussian-copula TE using only sample pairs `(t - lag, t)` where both frames are retained
+/// (`valid[t] && valid[t - lag]`), so FD-censored (interpolated) frames never enter the estimate.
+pub fn compute_transfer_entropy_matrix_masked(
+    ts: ArrayView2<'_, f64>,
+    lag: usize,
+    valid: Option<&[bool]>,
+) -> Array2<f64> {
+    let (nt_full, n_rois) = ts.dim();
     let lag = lag.max(1);
-    if nt <= lag + 4 {
+    if nt_full <= lag + 4 {
         return Array2::from_elem((n_rois, n_rois), f64::NAN);
     }
+    let pair_t: Vec<usize> = (lag..nt_full)
+        .filter(|&t| valid.map_or(true, |v| v[t] && v[t - lag]))
+        .collect();
+    if pair_t.len() < 5 {
+        return Array2::from_elem((n_rois, n_rois), f64::NAN);
+    }
+    let nt = pair_t.len() + lag; // so that `nt - lag` == number of usable pairs below
 
     let mut intact = vec![false; n_rois];
     let mut curr_norms: Vec<Option<Vec<f64>>> = vec![None; n_rois];
@@ -179,10 +196,13 @@ pub fn compute_transfer_entropy_matrix(ts: ArrayView2<'_, f64>, lag: usize) -> A
         .zip(past_norms.par_iter_mut())
         .enumerate()
         .for_each(|(r, (c_slot, p_slot))| {
-            let col: Vec<f64> = (0..nt).map(|t| ts[[t, r]]).collect();
+            let col: Vec<f64> = (0..nt_full).map(|t| ts[[t, r]]).collect();
             if col.iter().all(|v| v.is_finite()) {
-                let cn_curr = copnorm(&col[lag..nt]);
-                let cn_past = copnorm(&col[..(nt - lag)]);
+                let curr: Vec<f64> = pair_t.iter().map(|&t| col[t]).collect();
+                let past: Vec<f64> = pair_t.iter().map(|&t| col[t - lag]).collect();
+                debug_assert_eq!(curr.len(), nt - lag);
+                let cn_curr = copnorm(&curr);
+                let cn_past = copnorm(&past);
                 *c_slot = standardize_unit_norm(&cn_curr);
                 *p_slot = standardize_unit_norm(&cn_past);
             }

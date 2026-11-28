@@ -22,7 +22,7 @@
 </p>
 
 <p align="center">
-  <b>Current version: 0.4.1</b> ·
+  <b>Current version: 0.5.0</b> ·
   <a href="docs/wiki/Home.md"><b>Visual Wiki</b></a> ·
   <a href="CHANGELOG.md"><b>Release Notes</b></a> ·
   <a href="docs/wiki/Benchmarks-and-Validation.md"><b>Benchmarks &amp; Validation</b></a> ·
@@ -31,23 +31,34 @@
   <a href="https://github.com/CCS-NIMHANS/CCS_fMRIStudio/issues"><b>Report Issue</b></a>
 </p>
 
+> ### 📄 [v0.5.0 Validation Report](docs/validation/v0.5.0/REPORT.md) · [PDF](docs/validation/v0.5.0/REPORT.pdf)
+> CCS fMRI Studio v0.5.0 benchmarked against **fMRIPrep 24.1.1** (preprocessing) and **nilearn 0.14** (time series & connectivity) on 25 runs from OpenNeuro ds003768 (EEG-fMRI sleep) and ds006110 (PsiConnect psilocybin), including concordance of **sleep-stage** and **psilocybin / naturalistic-condition** effects.
+>
+> | Tier | Key result |
+> | :--- | :--- |
+> | Preprocessing vs fMRIPrep | brain-mask Dice **0.987**; FD r **0.81** |
+> | Engine vs nilearn (identical inputs) | ROI extraction identical (19 ms vs 4.1 s); denoising identical given the same model (34/37 runs); FC r **0.95** vs nilearn default filter |
+> | End-to-end vs fMRIPrep + nilearn | FC r **0.68**, network level **0.87**; same-run agreement (0.60) exceeds either pipeline's test-retest (0.46 / 0.54) |
+> | Biological concordance | sleep: BOLD amplitude ↑ in 3/3 subjects with both pipelines, ΔFC r **0.63**; psilocybin: within-network FC ↓ in 4/4 conditions, ΔFC r **0.88–0.94** |
+> | Speed | preprocessing **80–90 s / run** vs fMRIPrep ≈ 60 min / subject |
+
 ---
 
 ## 📥 Quick Download
 
 | Platform | Package | Direct Download |
 | :--- | :--- | :--- |
-| **macOS** | Apple Silicon / Universal App ZIP (macOS 12+) | [CCSfMRIStudio-macos.zip](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-macos.zip) |
-| **Windows** | 64-bit Portable Desktop ZIP (Windows 10/11) | [CCSfMRIStudio-windows-x64.zip](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-windows-x64.zip) |
+| **macOS** | Apple Developer ID signed &amp; notarized DMG / App ZIP (macOS 12+) | [CCSfMRIStudio-macos.dmg](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-macos.dmg) · [CCSfMRIStudio-macos.zip](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-macos.zip) |
+| **Windows** | 64-bit Portable Desktop ZIP / MSIX (Windows 10/11) | [CCSfMRIStudio-windows-x64.zip](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-windows-x64.zip) · [CCSfMRIStudio-windows-x64.msix](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-windows-x64.msix) |
 | **Linux (x86_64)** | Portable Desktop Bundle (`.tar.gz`) | [CCSfMRIStudio-linux-x64.tar.gz](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest/download/CCSfMRIStudio-linux-x64.tar.gz) |
 
 > 📦 Checksums (`SHA256SUMS.txt`) and release assets are published on the **[GitHub Releases Page](https://github.com/CCS-NIMHANS/CCS_fMRIStudio/releases/latest)**.
 > 🔐 Free Windows code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/) (see [Code Signing Policy](CODE_SIGNING_POLICY.md)).
 
 <details>
-<summary><b>🍏 macOS Gatekeeper Setup &amp; 🐧 Linux Bundle Launch</b></summary>
+<summary><b>🍏 macOS Setup &amp; 🐧 Linux Bundle Launch</b></summary>
 
-**macOS (first launch):**
+**macOS:** Official CI releases are Apple Developer ID signed and notarized — open the `.dmg` and drag **CCS fMRI Studio** to `/Applications` (no terminal command needed). Only for local or ad-hoc unsigned builds, clear the quarantine flag first:
 ```sh
 xattr -rd com.apple.quarantine ~/Downloads/ccs_fmri_studio.app
 mv ~/Downloads/ccs_fmri_studio.app /Applications/
@@ -63,15 +74,38 @@ mkdir -p ~/CCS_fMRIStudio && tar -xzf ~/Downloads/CCSfMRIStudio-linux-x64.tar.gz
 
 ---
 
-## ✨ What's New in v0.4.0
+## ✨ What's New in v0.5.0 (validity release)
 
+v0.5.0 fixes preprocessing and statistics problems found in an independent review and benchmark against
+**fMRIPrep 24.1.1 + nilearn** (see [`CHANGELOG.md`](CHANGELOG.md) and the validation report). **Re-run preprocessing for data
+processed with ≤ 0.4.1.**
+
+- **Brain extraction + correct normalisation:** template-based skull stripping (head-to-head SyN, back-projected brain
+  mask) and brain-to-brain SyN to **MNI152NLin6Asym**, the native space of the bundled Schaefer-2018 atlas.
+- **Valid aCompCor masks:** Atropos on the skull-stripped brain; eroded deep-WM and ventricular-CSF masks.
+- **Slice-timing correction**, **true single-interpolation** resampling (motion ∘ coregistration ∘ normalisation per volume),
+  **quality-controlled motion estimation**, fixed random seeds, disk-space and output validation (runs fail loudly instead of
+  writing corrupt confounds).
+- **Censoring done right:** censored frames are excluded from every statistic; default model is simultaneous
+  nuisance + DCT band-pass + spike regression (equivalent to AFNI `3dTproject -cenmode KILL`); residual DOF reported honestly
+  with warnings.
+- **Statistics fixes:** Newman modularity formula, positive-weight graphs, seed maps with matched cleaning and DOF-based z.
+- **Per-subject `qc_report.html`** (fMRIPrep-style): alignment overlays, tissue masks, motion/FD/DVARS, carpet plot,
+  parcel coverage and an auto-generated methods paragraph.
+- **Publication figures in the app:** a *Generate Publication Figures* button (Summary & Export) and a *Group Publication
+  Figures* button (Stats → Group) write report-style 300-dpi PNG + SVG figures for a subject or a session/condition contrast.
+
+<details>
+<summary>Previous Releases: v0.4.1, v0.4.0, v0.3.0, v0.2.0, v0.1.3, v0.1.2, v0.1.1 &amp; v0.1.0</summary>
+
+**v0.4.1**
+- **Nilearn Seed-to-Voxel GLM Voxelwise Denoising:** Updated `--mode seed-glm` (`nilearn_stats.py` / `results_dashboard.dart`) to accept `--confounds-tsv`, `--low-hz`, `--high-hz`, and `--tr`, regressing motion confounds and applying matching bandpass filtering inside `NiftiMasker` before Fisher-$z$ correlation.
+
+**v0.4.0**
 - **Linear-Interpolation Censoring & Effective DOF QC (`CensorMode::Interpolate`):** Replaces low-DOF flat-zero spike plateaus on high-motion scans with Power et al. (2014) intact-frame nuisance regression + linear interpolation before bandpass filtering, reports **Effective DOF remaining** and **Motion QC warnings**, and uses robust MAD scaling for Raw vs Clean BOLD traces.
 - **Pure-Rust Graph Theory Tab (`Graph Theory`):** Computes NaN-safe Weighted & Binary Global/Local Efficiency, Onnela Clustering ($C$), Path Length ($L$), Maslov-Sneppen Small-Worldness ($\sigma$), Newman Modularity ($Q$), Assortativity ($r$), Brandes Betweenness, Participation Coefficient ($P_i$), Within-Module $z_i$, **Density Sweep (5%–40%)**, and **Hub Classification Scatter ($P_i$ vs $z_i$)**, exporting `graph_metrics_nodal.csv` and `graph_metrics_global.json`.
 - **Advanced Nilearn Statistical Inference (`Stats (Nilearn)`):** Runs **Single-Subject Seed-to-Voxel GLM** (BH-FDR / Bonferroni thresholding, MNI cluster tables, and inline `plot_glass_brain` / `plot_stat_map` figures) plus **Group / Batch Connectivity Statistics** (edgewise FDR $t$-tests, NBS permutation clusters, Tangent-Space CV decoding, and `statsmodels.MixedLM`).
 - **Net Directed Transfer Entropy & Zoomed ANOVA Dynamics:** Adds **Net Flow (`TE i→j − TE j→i`)** toggle with mid-arc directional chevrons + **Sender vs Receiver** diverging bar chart, plus zoomed Y-axis scaling and Yeo-7 One-Way ANOVA (`F`, `p`) across intrinsic timescales and complexity.
-
-<details>
-<summary>Previous Releases: v0.3.0, v0.2.0, v0.1.3, v0.1.2, v0.1.1 &amp; v0.1.0</summary>
 
 **v0.3.0**
 - **Interactive Batch Analysis (`6. Batch`):** Scan a whole study root folder (`Patient_*/pre|post` or BIDS), add individual folders, or multi-select NIfTI/DICOM files into a searchable subject queue with checkboxes and per-subject file editors.
@@ -140,6 +174,8 @@ mkdir -p ~/CCS_fMRIStudio && tar -xzf ~/Downloads/CCSfMRIStudio-linux-x64.tar.gz
 
 ## ⚡ Verified Speedup & Parity Benchmarks
 
+> Accuracy validation for v0.5.0 is in the [**v0.5.0 Validation Report**](docs/validation/v0.5.0/REPORT.md). The Rust-core timings below were measured with v0.4.x on the same Rust engine; the ANTsPy preprocessing timing is for v0.5.0.
+
 Evaluated on clinical 3T resting-state fMRI + T1w DICOM data (`Patient_01/pre`, `99 × 117 × 95 × 450` float32 MNI152 2 mm volume, ~1.98 GB uncompressed, 400 Schaefer ROIs, 22 motion + WM/CSF aCompCor confounds, 98 `FD > 0.5 mm` scrubbing frames, `0.008–0.09 Hz` bandpass, 400×400 FC) over **3 repeated trials** on Apple Silicon (24 GB RAM):
 
 | Pipeline / Metric | Rust `.nii` (`memmap2`) | `nilearn` `.nii` | Rust `.nii.gz` | `nilearn` `.nii.gz` | Speedup (`.nii` `mmap` / `.nii.gz`) |
@@ -153,9 +189,9 @@ Evaluated on clinical 3T resting-state fMRI + T1w DICOM data (`Patient_01/pre`, 
 | **Peak RSS Memory** | **2,244.58 MB** | 4,105.03 MB | 4,574.94 MB | 4,119.31 MB | **1.83× less RAM** (`.nii`) |
 
 - **Mathematical Parity (`400` Schaefer ROIs)**:
-  - Rust DCT high-pass (`0.008 Hz`) vs. `nilearn.signal.clean(..., filter='cosine')`: **`mean r = 0.99999999999867`**, **`median r = 0.99999999999885`**, **`min r = 0.99999999999476`**.
-  - Rust DCT simultaneous bandpass (`0.008–0.09 Hz`) vs. `nilearn` Butterworth: **`mean r = 0.9200`**, **`median r = 0.9230`**.
-- **ANTsPy Preprocessing (`SyNQuick`)**: Completed full structural + 450-volume functional pipeline in **101.93 s (1.70 min)** with peak RSS **7,227.0 MB**.
+  - Rust simultaneous denoising vs. `nilearn.signal.clean` given the identical design (confounds + DCT basis + censoring): identical in 34/37 runs (FC r = 1.000, max |Δ| ≤ 3·10⁻⁶; v0.5.0 report).
+  - Rust DCT band-pass (`0.008–0.09 Hz`) vs. `nilearn` Butterworth: median FC **r = 0.95** (runs with ≥ 30 residual DOF; v0.5.0 report).
+- **ANTsPy Preprocessing (`SyNQuick`, v0.5.0)**: full structural + functional pipeline (brain extraction, segmentation, SyN, slice timing, QC'd motion, one-shot resampling, QC report) in **80–90 s** for 286–504-volume runs on an idle 14-core Apple Silicon Mac (v0.4.1: 98–130 s), peak RSS 5–7 GB. External validation against fMRIPrep 24.1.1 + nilearn: brain-mask Dice 0.987, FD r 0.81, same-run FC agreement 0.60 (above both pipelines' run-to-run reliability, 0.46/0.54).
 
 ---
 
@@ -167,7 +203,7 @@ Evaluated on clinical 3T resting-state fMRI + T1w DICOM data (`Patient_01/pre`, 
 | [**1. Architecture & Hybrid Engine**](docs/wiki/Architecture-and-Hybrid-Engine.md) | Flutter + `flutter_rust_bridge` v2 + `memmap2` + `faer` + `uv` sidecar & 24 GB RAM safeguards |
 | [**2. Preprocessing & DICOM / BIDS**](docs/wiki/Preprocessing-and-DICOM-BIDS.md) | `dcm2niix` Siemens `.IMA` conversion, ANTsPy N4/Atropos/SyNQuick/MoCo, and `confounds.tsv` |
 | [**3. Rust Denoising & Connectivity**](docs/wiki/Rust-Denoising-and-Connectivity.md) | Schaefer parcellation, aCompCor, simultaneous orthogonalized DCT projection, FC/dFC, RGBA slices |
-| [**4. Benchmarks & Validation**](docs/wiki/Benchmarks-and-Validation.md) | Full `Patient_01/pre` preprocessing report, 3-trial min/median/max benchmarks, and parity tests |
+| [**4. Benchmarks & Validation**](docs/wiki/Benchmarks-and-Validation.md) | **v0.5.0 validation vs fMRIPrep / nilearn** (incl. sleep & psilocybin concordance), runtime, and Rust-vs-nilearn speed benchmarks |
 | [**5. Building & Releasing (3 OSes)**](docs/wiki/Building-and-Releasing.md) | Local builds, `flutter_rust_bridge_codegen`, and 3-OS GitHub Actions release packaging |
 | [**6. TBI & Stroke Lesion Workflows**](docs/wiki/TBI-and-Stroke-Lesion-Workflows.md) | Auto-segmentation, Flutter 3D mask editor, CFM/Enantiomorphic registration, clinical templates & LMM |
 
@@ -228,11 +264,11 @@ uv run python -m ccs_fmri_sidecar.benchmark_vs_nilearn \
 | Category | App Method | Paper or Reference | Implementation Scope |
 | :--- | :--- | :--- | :--- |
 | **DICOM / BIDS** | Mosaic CSA & BIDS sidecar extraction | Li et al. (2016), [doi:10.1016/j.jneumeth.2016.03.001](https://doi.org/10.1016/j.jneumeth.2016.03.001) | Automated `dcm2niix` wrapper extracting `RepetitionTime` and `SliceTiming`. |
-| **Structural** | N4 Bias Field & Atropos Segmentation | Tustison et al. (2010), [doi:10.1109/TMI.2010.2046908](https://doi.org/10.1109/TMI.2010.2046908); Avants et al. (2011), [doi:10.1007/s12021-011-9109-y](https://doi.org/10.1007/s12021-011-9109-y) | 3-class K-means Atropos WM/CSF segmentation with 1-voxel erosion for aCompCor. |
-| **Registration** | SyN Diffeomorphic Normalization | Avants et al. (2008), [doi:10.1016/j.media.2007.06.004](https://doi.org/10.1016/j.media.2007.06.004) | `antsRegistrationSyNQuick[s]` to MNI152NLin2009cAsym (2 mm) + single-interpolation 4D warp. |
-| **Motion & QC** | Framewise Displacement (FD) | Power et al. (2012), [doi:10.1016/j.neuroimage.2011.10.018](https://doi.org/10.1016/j.neuroimage.2011.10.018) | 6-DOF Euler/translation extraction from `BOLDRigid`, 50 mm sphere FD, and scrubbing spikes. |
-| **Denoising** | aCompCor & Simultaneous Projection | Behzadi et al. (2007), [doi:10.1016/j.neuroimage.2007.04.042](https://doi.org/10.1016/j.neuroimage.2007.04.042); Hallquist et al. (2013), [doi:10.1016/j.neuroimage.2013.05.116](https://doi.org/10.1016/j.neuroimage.2013.05.116); Lindquist et al. (2019), [doi:10.1002/hbm.24528](https://doi.org/10.1002/hbm.24528) | Native Rust `faer` thin SVD orthogonalized regression of confounds, FD spikes, and DCT-II stopband. |
-| **Parcellation** | Schaefer 400-Parcel 7-Network Atlas | Schaefer et al. (2018), [doi:10.1093/cercor/bhx179](https://doi.org/10.1093/cercor/bhx179) | MNI152 2 mm nearest-neighbor resampling and parallel Rayon mean ROI extraction. |
+| **Structural** | N4, template-based brain extraction & Atropos | Tustison et al. (2010), [doi:10.1109/TMI.2010.2046908](https://doi.org/10.1109/TMI.2010.2046908); Avants et al. (2011), [doi:10.1007/s12021-011-9109-y](https://doi.org/10.1007/s12021-011-9109-y) | Skull stripping by SyN to MNI152NLin6Asym (head) + back-projected brain mask; 3-class Atropos on the winsorised brain; eroded WM (P>0.9) and ventricular CSF (P>0.9) masks for aCompCor. |
+| **Registration** | SyN Diffeomorphic Normalization | Avants et al. (2008), [doi:10.1016/j.media.2007.06.004](https://doi.org/10.1016/j.media.2007.06.004) | Brain-to-brain `antsRegistrationSyNQuick[s]` to MNI152NLin6Asym (TemplateFlow); BOLD→T1w rigid; motion, coregistration and normalisation composed into one interpolation onto the 2 mm grid. |
+| **Slice timing / Motion & QC** | Fourier slice-timing correction; FD | Power et al. (2012), [doi:10.1016/j.neuroimage.2011.10.018](https://doi.org/10.1016/j.neuroimage.2011.10.018) | STC to mid-TR from BIDS `SliceTiming`; per-volume rigid registration with quality control; Power FD (50 mm sphere); `qc_report.html` per run. |
+| **Denoising** | aCompCor & Simultaneous Projection | Behzadi et al. (2007), [doi:10.1016/j.neuroimage.2007.04.042](https://doi.org/10.1016/j.neuroimage.2007.04.042); Hallquist et al. (2013), [doi:10.1016/j.neuroimage.2013.05.116](https://doi.org/10.1016/j.neuroimage.2013.05.116); Lindquist et al. (2019), [doi:10.1002/hbm.24528](https://doi.org/10.1002/hbm.24528); Power et al. (2014), [doi:10.1016/j.neuroimage.2013.08.048](https://doi.org/10.1016/j.neuroimage.2013.08.048) | Native Rust `faer` projection of confounds, high-passed aCompCor, DCT-II stopband and censored-frame spikes in one model (= `3dTproject -cenmode KILL`); censored frames excluded from all statistics; DOF = retained frames − design rank. |
+| **Parcellation** | Schaefer 400-Parcel 7-Network Atlas | Schaefer et al. (2018), [doi:10.1093/cercor/bhx179](https://doi.org/10.1093/cercor/bhx179) | Atlas used in its native FSL MNI152 (NLin6Asym) 2 mm grid (no resampling); per-parcel EPI coverage reported; parallel Rayon mean ROI extraction. |
 
 ---
 

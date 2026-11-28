@@ -124,6 +124,9 @@ class _ResultsDashboardState extends State<ResultsDashboard>
   int _groupNPerm = 250;
   bool _runningGroupStats = false;
   String? _groupStatsError;
+  bool _runningPubFigs = false;
+  String? _pubFigsMsg;
+  String? _pubFigsDir;
   Map<String, dynamic>? _groupStatsSummary;
   int _groupStatsRunSeq = 0;
 
@@ -349,6 +352,92 @@ class _ResultsDashboardState extends State<ResultsDashboard>
     } finally {
       if (mounted) setState(() => _runningSeedGlm = false);
     }
+  }
+
+  /// Generates report-style, publication-ready figures (300-dpi PNG + SVG) via the sidecar.
+  /// [group] = true uses the batch CSV and group A/B selection from the Stats tab.
+  Future<void> _runPublicationFigures({required bool group}) async {
+    final runner = widget.onRunSidecarModule;
+    final expDir = widget.summary.exportedDir;
+    if (runner == null) return;
+    late final List<String> args;
+    late final String outDir;
+    if (group) {
+      final batchCsv = _groupBatchCsvCtrl.text.trim();
+      if (batchCsv.isEmpty || !File(batchCsv).existsSync()) {
+        setState(() => _pubFigsMsg = 'Select a batch_summary.csv from the Batch tab first.');
+        return;
+      }
+      outDir = '${File(batchCsv).parent.path}${Platform.pathSeparator}publication_figures';
+      args = [
+        '--mode', 'group',
+        '--batch-csv', batchCsv,
+        '--group-a', _groupACtrl.text.trim().isEmpty ? 'pre' : _groupACtrl.text.trim(),
+        '--group-b', _groupBCtrl.text.trim().isEmpty ? 'post' : _groupBCtrl.text.trim(),
+        if (_groupPaired) '--paired',
+        '--out-dir', outDir,
+      ];
+    } else {
+      if (expDir == null || expDir.isEmpty) {
+        setState(() => _pubFigsMsg = 'Run denoising with an export folder first.');
+        return;
+      }
+      outDir = '$expDir${Platform.pathSeparator}publication_figures';
+      args = [
+        '--mode', 'subject',
+        '--results-dir', expDir,
+        if (widget.boldMniPath.isNotEmpty) ...['--bold-mni', widget.boldMniPath],
+        if (widget.labelsJsonPath.isNotEmpty) ...['--labels-json', widget.labelsJsonPath],
+        '--out-dir', outDir,
+      ];
+    }
+    setState(() {
+      _runningPubFigs = true;
+      _pubFigsMsg = null;
+    });
+    final logs = <String>[];
+    try {
+      final code = await runner('ccs_fmri_sidecar.pub_figures', args, logs.add);
+      if (!mounted) return;
+      final manifest = File('$outDir${Platform.pathSeparator}figures_manifest.json');
+      if (code == 0 && manifest.existsSync()) {
+        final parsed = jsonDecode(manifest.readAsStringSync()) as Map<String, dynamic>;
+        final n = (parsed['figures'] as List).length;
+        setState(() {
+          _pubFigsDir = outDir;
+          _pubFigsMsg = '$n publication figures (300-dpi PNG + SVG) saved to $outDir';
+        });
+      } else {
+        setState(() => _pubFigsMsg = 'Figure generation exited ($code): ${logs.reversed.take(3).join(' | ')}');
+      }
+    } finally {
+      if (mounted) setState(() => _runningPubFigs = false);
+    }
+  }
+
+  Widget _buildPubFigsControls({required bool group}) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        FilledButton.icon(
+          onPressed: _runningPubFigs ? null : () => _runPublicationFigures(group: group),
+          icon: _runningPubFigs
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.image_outlined),
+          label: Text(group ? 'Group Publication Figures' : 'Generate Publication Figures'),
+        ),
+        if (_pubFigsDir != null)
+          OutlinedButton.icon(
+            onPressed: () => widget.onOpenResultsFolder(_pubFigsDir!),
+            icon: const Icon(Icons.folder_open),
+            label: const Text('Open Figures Folder'),
+          ),
+        if (_pubFigsMsg != null)
+          Text(_pubFigsMsg!, style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+      ],
+    );
   }
 
   Future<void> _runGroupStats() async {
@@ -1986,6 +2075,8 @@ class _ResultsDashboardState extends State<ResultsDashboard>
                   const SizedBox(height: 10),
                   Text('Error: $_groupStatsError', style: const TextStyle(color: Color(0xFFFCA5A5))),
                 ],
+                const SizedBox(height: 10),
+                _buildPubFigsControls(group: true),
                 if (grpOut != null) ...[
                   const SizedBox(height: 14),
                   Wrap(
@@ -2130,6 +2221,9 @@ class _ResultsDashboardState extends State<ResultsDashboard>
                       'gcmi_matrix.csv',
                       'te_matrix.csv',
                       'denoised_timeseries.csv',
+                      'raw_timeseries.csv',
+                      'censor_mask.csv',
+                      'confounds_used.csv',
                       if (_dynamics?.exportedCsvPath != null) 'roi_dynamics.csv',
                       if (_graphSummary?.exportedCsvPath != null) 'graph_metrics_nodal.csv',
                       if (_graphSummary?.exportedJsonPath != null) 'graph_metrics_global.json',
@@ -2172,6 +2266,8 @@ class _ResultsDashboardState extends State<ResultsDashboard>
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                _buildPubFigsControls(group: false),
               ],
             ),
           ),

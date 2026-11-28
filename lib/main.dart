@@ -65,13 +65,15 @@ class FmriWorkspacePage extends StatefulWidget {
 class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   static const List<(String key, String label)> _preprocStages = [
     ('load_inputs', 'Load T1w & 4D BOLD'),
-    ('t1_n4_bias_correction', 'N4 Bias Correction'),
+    ('t1_n4_and_brain_extraction', 'N4 + Brain Extraction'),
     ('t1_atropos_segmentation', 'Atropos Tissue WM/CSF'),
     ('t1_to_mni', 'Nonlinear MNI Warp'),
-    ('bold_motion_correction', '4D Motion Correction'),
-    ('mean_bold_to_t1_rigid', 'BOLD -> T1w Align'),
-    ('warp_4d_and_masks_to_mni', 'Warp 4D BOLD to MNI'),
-    ('align_schaefer400_atlas', 'Schaefer-400 Atlas'),
+    ('bold_slice_timing', 'Slice-Timing Correction'),
+    ('bold_motion_estimation', '4D Motion Estimation'),
+    ('boldref_to_t1_rigid', 'BOLD -> T1w Align'),
+    ('single_interpolation_resampling', 'One-Shot BOLD -> MNI'),
+    ('masks_to_mni', 'WM/CSF Masks -> MNI'),
+    ('atlas_and_coverage', 'Schaefer-400 + Coverage QC'),
   ];
 
   final FmriSessionState _session = FmriSessionState();
@@ -139,7 +141,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
   double _highHz = 0.09;
   double _fdThresholdMm = 0.5;
   double _maxDamagePct = 50.0;
-  String _censorMode = 'interpolate';
+  String _censorMode = 'spike';
 
   @override
   void initState() {
@@ -442,7 +444,7 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
     _stageDurations.clear();
     _statusMessage = 'Running ANTsPy preprocessing ($_templateId, $_lesionMode)…';
     _startActivity(
-      'ANTsPy Preprocessing (0/8): ${_preprocStages.first.$2}…',
+      'ANTsPy Preprocessing (0/${_preprocStages.length}): ${_preprocStages.first.$2}…',
       progress: 0.04,
     );
 
@@ -2164,18 +2166,18 @@ class _FmriWorkspacePageState extends State<FmriWorkspacePage> {
                           decoration: const InputDecoration(
                             labelText: 'Motion Scrubbing Mode',
                             helperText:
-                                'Linear Interpolate prevents flat-zero segments and low-DOF artifacts on high-motion scans.',
+                                'Censored frames are always excluded from statistics; modes differ only in how the model is fitted.',
                             border: OutlineInputBorder(),
                             isDense: true,
                           ),
                           items: const [
                             DropdownMenuItem(
-                              value: 'interpolate',
-                              child: Text('Linear Interpolate (CONN Default)'),
+                              value: 'spike',
+                              child: Text('Simultaneous, censored frames dropped (= AFNI 3dTproject KILL)'),
                             ),
                             DropdownMenuItem(
-                              value: 'spike',
-                              child: Text('Spike Regressors (Zero-Out)'),
+                              value: 'interpolate',
+                              child: Text('Interpolate then filter (Power 2014), censored frames dropped'),
                             ),
                             DropdownMenuItem(
                               value: 'none',

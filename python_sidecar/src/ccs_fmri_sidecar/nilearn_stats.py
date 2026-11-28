@@ -60,6 +60,23 @@ def _load_confounds_matrix(confounds_tsv: Path | None, n_tp: int) -> np.ndarray 
     return mat
 
 
+def _dct_stopband(nt: int, tr: float, low_hz: float | None, high_hz: float | None) -> np.ndarray:
+    """DCT-II stopband basis identical to the Rust `build_dct_stopband_basis`."""
+    if nt < 2 or tr <= 0:
+        return np.zeros((nt, 0))
+    win = 2.0 * nt * tr
+    ks: list[int] = []
+    if low_hz and low_hz > 0:
+        ks += list(range(1, min(int(np.floor(win * low_hz)), nt - 1) + 1))
+    if high_hz and 0 < high_hz < 0.5 / tr:
+        start = max(int(np.ceil(win * high_hz)), 1, (ks[-1] + 1) if ks else 1)
+        ks += list(range(start, nt))
+    t = np.arange(nt) + 0.5
+    if not ks:
+        return np.zeros((nt, 0))
+    return np.sqrt(2.0 / nt) * np.cos(np.pi / nt * np.outer(t, np.asarray(ks, float)))
+
+
 def run_seed_glm(
     bold_mni: Path,
     denoised_ts_csv: Path,
@@ -110,28 +127,88 @@ def run_seed_glm(
     if hp is not None and lp is not None and hp >= lp:
         hp, lp = None, None
 
-    conf_mat = _load_confounds_matrix(confounds_tsv, nt)
-    mask_img = masking.compute_epi_mask(bold_img)
-    masker = NiftiMasker(
-        mask_img=mask_img,
-        detrend=True,
-        standardize=None,
-        high_pass=hp,
-        low_pass=lp,
-        t_r=eff_tr if (hp is not None or lp is not None) else None,
-    )
-    voxel_ts = masker.fit_transform(bold_img, confounds=conf_mat).astype(np.float64)  # (T, V)
+    # ---- Voxel cleaning identical to the Rust GUI pipeline (v0.5.0) -------------------------
+    # The Rust core exports `confounds_used.csv` (motion + aCompCor exactly as regressed) and
+    # `censor_mask.csv` next to `denoised_timeseries.csv`. Voxels are cleaned with the same model:
+    # nuisance OLS fitted on retained frames -> linear interpolation of censored frames -> DCT
+    # stopband (+ mean/trend) projection -> censored frames dropped. Because every step is linear,
+    # the ROI-mean of the cleaned voxels equals the Rust-cleaned seed, so seed and voxels match.
+    res_dir = denoised_ts_csv.parent
+    conf_used = res_dir / "confounds_used.csv"
+    if conf_used.exists() and conf_used.stat().st_size > 0:
+        conf_mat = np.loadtxt(conf_used, delimiter=",", ndmin=2)
+        if conf_mat.shape[0] != nt:
+            conf_mat = None
+    else:
+        conf_mat = _load_confounds_matrix(confounds_tsv, nt)
+    cm_path = res_dir / "censor_mask.csv"
+    keep = np.loadtxt(cm_path, delimiter=",").astype(bool).ravel() if cm_path.exists() else np.ones(nt, bool)
+    if keep.size != nt:
+        keep = np.ones(nt, bool)
 
-    v_mean = voxel_ts.mean(axis=0, keepdims=True)
-    voxel_c = voxel_ts - v_mean
-    v_std = voxel_c.std(axis=0, ddof=1, keepdims=True)
-    valid_v = (v_std.ravel() > 1e-10)
-    z_vec = np.zeros(voxel_ts.shape[1], dtype=np.float64)
+    pre_mask = Path(bold_mni).parent / "brain_mask_mni.nii.gz"
+    if pre_mask.exists():
+        mask_img = nib.load(str(pre_mask))  # anatomical brain mask from preprocessing (v0.5.0)
+    else:
+        mask_img = masking.compute_epi_mask(bold_img)
+    masker = NiftiMasker(mask_img=mask_img, standardize=None, detrend=False)
+    voxel_ts = masker.fit_transform(bold_img).astype(np.float64)  # (T, V)
+
+    summ_p = res_dir / "biomarkers_summary.json"
+    censor_mode = "spike"
+    if summ_p.exists():
+        censor_mode = str(json.loads(summ_p.read_text(encoding="utf-8")).get("censor_mode", "spike"))
+    t_idx = np.arange(nt, dtype=np.float64)
+    base = np.column_stack([np.ones(nt), (t_idx - t_idx.mean()) / max(t_idx.std(), 1e-12)])
+    nuis = base if conf_mat is None or conf_mat.size == 0 else np.column_stack([base, conf_mat])
+    dct = _dct_stopband(nt, eff_tr, hp, lp)
+    design = np.column_stack([nuis, dct]) if dct.size else nuis
+    if censor_mode == "interpolate":
+        # Rust interpolate mode: nuisance OLS on retained frames -> linear interpolation of censored
+        # frames -> DCT (+ mean/trend) projection -> censored frames dropped.
+        beta = np.linalg.lstsq(nuis[keep], voxel_ts[keep], rcond=None)[0]
+        resid = voxel_ts - nuis @ beta
+        if not keep.all():
+            good = np.where(keep)[0]
+            for b_ in np.where(~keep)[0]:
+                left, right = good[good < b_], good[good > b_]
+                if left.size and right.size:
+                    lo, hi = left[-1], right[0]
+                    w = (b_ - lo) / (hi - lo)
+                    resid[b_] = (1 - w) * resid[lo] + w * resid[hi]
+                else:
+                    resid[b_] = resid[left[-1] if left.size else right[0]]
+        proj = np.column_stack([base, dct]) if dct.size else base
+        q, _ = np.linalg.qr(proj)
+        clean = (resid - q @ (q.T @ resid))[keep]
+    else:
+        # Default (spike / none): nuisance + DCT stopband fitted simultaneously on retained frames
+        # only, identical to the Rust spike mode and to AFNI 3dTproject -cenmode KILL.
+        q, _ = np.linalg.qr(design[keep])
+        y = voxel_ts[keep]
+        clean = y - q @ (q.T @ y)
+    seed_k = seed[keep]
+    n_keep = int(keep.sum())
+    dof = int(n_keep - np.linalg.matrix_rank(design[keep]))
+
+    if dof < 10:
+        raise SystemExit(
+            f"Seed map not computed: only {dof} residual degrees of freedom after nuisance regression, band-pass "
+            f"and censoring ({n_keep} retained frames). Widen the band (e.g. high_hz 0.1-0.15 Hz), reduce confounds or "
+            "censor less aggressively."
+        )
+    seed_z = (seed_k - seed_k.mean()) / max(seed_k.std(ddof=1), 1e-12)
+    v_std = clean.std(axis=0, ddof=1)
+    valid_v = v_std > 1e-10
+    z_vec = np.zeros(clean.shape[1], dtype=np.float64)
+    r_vec = np.zeros(clean.shape[1], dtype=np.float64)
     if np.any(valid_v):
-        vox_z = voxel_c[:, valid_v] / v_std[:, valid_v]
-        r = np.clip((seed_z @ vox_z) / max(1, nt - 1), -0.99999, 0.99999)
-        fisher_z = np.arctanh(r)
-        z_vec[valid_v] = fisher_z * np.sqrt(max(1.0, float(nt - 3)))
+        vox_z = (clean[:, valid_v] - clean[:, valid_v].mean(axis=0)) / v_std[valid_v]
+        r = np.clip((seed_z @ vox_z) / max(1, n_keep - 1), -0.99999, 0.99999)
+        r_vec[valid_v] = r
+        # Fisher z scaled by the *residual* degrees of freedom (not the raw frame count):
+        # band-pass filtering and nuisance regression leave only `dof` independent samples.
+        z_vec[valid_v] = np.arctanh(r) * np.sqrt(max(1.0, float(dof - 3)))
 
     z_img = masker.inverse_transform(z_vec)
     zmap_path = out_dir / "seed_zmap.nii.gz"
@@ -215,6 +292,10 @@ def run_seed_glm(
 
     summary = {
         "mode": "seed-glm",
+        "statistic": "seed correlation, Fisher z * sqrt(DOF - 3)",
+        "n_frames_retained": int(n_keep),
+        "residual_dof": int(dof),
+        "censor_mode": censor_mode,
         "roi_index": int(roi_index),
         "seed_label": label_str,
         "correction": height_ctrl,

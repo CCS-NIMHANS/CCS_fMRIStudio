@@ -474,8 +474,9 @@ mod tests {
         )
         .unwrap();
 
-        // Spike mode zeros out censored block; interpolate keeps continuous signal & more DOF
-        assert!(res_interp.dof_remaining > res_spike.dof_remaining);
+        // Interpolation only keeps the *display* series continuous; censored frames carry no
+        // information, so both modes must report the same residual DOF.
+        assert_eq!(res_interp.dof_remaining, res_spike.dof_remaining);
         let interp_block_energy: f64 = scrub.iter().map(|&t| res_interp.clean_ts[[t, 0]].abs()).sum();
         assert!(interp_block_energy > 1.0, "Interpolate should keep continuous variation across censored spans");
     }
@@ -534,5 +535,119 @@ mod tests {
         let net_flow = compute_net_te_out_minus_in(&[0.0, 0.25, 0.05, 0.0], 2);
         assert!((net_flow[0] - 0.20_f32).abs() < 1e-6);
         assert!((net_flow[1] + 0.20_f32).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod validity_tests {
+    //! Regression tests for the v0.5.0 validity fixes (external review, Nov 2026).
+    use crate::connectivity::compute_nan_safe_graph_metrics;
+    use crate::denoise::{simultaneous_denoise_with_mode, CensorMode};
+    use crate::graph_theory::compute_full_graph_theory;
+    use crate::info_theory::{compute_transfer_entropy_matrix, compute_transfer_entropy_matrix_masked};
+    use ndarray::Array2;
+
+    fn lcg(seed: &mut u64) -> f64 {
+        *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((*seed >> 11) as f64) / ((1u64 << 53) as f64) - 0.5
+    }
+
+    /// Brute-force Newman Q over all node pairs for a dense weighted adjacency.
+    fn brute_q(a: &Array2<f64>, comm: &[usize]) -> f64 {
+        let n = a.nrows();
+        let k: Vec<f64> = (0..n).map(|i| a.row(i).sum()).collect();
+        let m2: f64 = k.iter().sum();
+        let mut q = 0.0;
+        for i in 0..n {
+            for j in 0..n {
+                if comm[i] == comm[j] {
+                    q += a[[i, j]] - k[i] * k[j] / m2;
+                }
+            }
+        }
+        q / m2
+    }
+
+    #[test]
+    fn modularity_matches_brute_force_definition() {
+        let n = 12;
+        let comm: Vec<usize> = (0..n).map(|i| i / 4).collect();
+        let mut seed = 7_u64;
+        let mut fc = Array2::<f64>::eye(n);
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let base = if comm[i] == comm[j] { 0.5 } else { 0.05 };
+                let v = (base + 0.3 * lcg(&mut seed)).clamp(-0.9, 0.95);
+                fc[[i, j]] = v;
+                fc[[j, i]] = v;
+            }
+        }
+        // full density, weighted, positive edges only
+        let mut a = fc.mapv(|v| if v > 1e-12 { v } else { 0.0 });
+        for i in 0..n {
+            a[[i, i]] = 0.0;
+        }
+        let expected = brute_q(&a, &comm);
+        let res = compute_full_graph_theory(fc.view(), &comm, 1.0, true).unwrap();
+        assert!((res.modularity_q - expected).abs() < 1e-9, "{} vs {}", res.modularity_q, expected);
+        let g = compute_nan_safe_graph_metrics(fc.view(), 0.0, Some(&comm)).unwrap();
+        assert!((g.modularity_q.unwrap() - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn negative_correlations_are_not_edges() {
+        let mut fc = Array2::<f64>::eye(4);
+        for (i, j, v) in [(0, 1, -0.9), (2, 3, 0.4), (0, 2, 0.2)] {
+            fc[[i, j]] = v;
+            fc[[j, i]] = v;
+        }
+        let res = compute_full_graph_theory(fc.view(), &[0, 0, 1, 1], 1.0, false).unwrap();
+        assert!(res.density <= 1.0);
+        // only the two positive edges may survive
+        assert!(res.n_edges <= 2, "n_edges={}", res.n_edges);
+    }
+
+    #[test]
+    fn censored_frames_are_excluded_and_dof_counts_them() {
+        let nt = 200;
+        let mut seed = 3_u64;
+        let ts = Array2::from_shape_fn((nt, 3), |_| lcg(&mut seed));
+        let spikes = vec![10, 11, 12, 50, 150];
+        let none = simultaneous_denoise_with_mode(ts.view(), None, 2.0, Some(0.01), None, &spikes, CensorMode::None, true).unwrap();
+        let interp = simultaneous_denoise_with_mode(ts.view(), None, 2.0, Some(0.01), None, &spikes, CensorMode::Interpolate, true).unwrap();
+        let spike = simultaneous_denoise_with_mode(ts.view(), None, 2.0, Some(0.01), None, &spikes, CensorMode::Spike, true).unwrap();
+        assert_eq!(none.kept_rows.len(), nt);
+        assert_eq!(interp.kept_rows.len(), nt - spikes.len());
+        assert_eq!(spike.kept_rows.len(), nt - spikes.len());
+        assert!(interp.kept_rows.iter().all(|r| !spikes.contains(r)));
+        // censoring costs (at least) one DOF per censored frame, and interpolate/spike agree
+        assert!(none.dof_remaining - interp.dof_remaining >= spikes.len());
+        assert_eq!(interp.dof_remaining, spike.dof_remaining);
+        assert_eq!(interp.kept_ts().nrows(), nt - spikes.len());
+    }
+
+    #[test]
+    fn masked_te_equals_unmasked_when_all_valid_and_ignores_invalid_pairs() {
+        let nt = 300;
+        let mut seed = 11_u64;
+        let mut ts = Array2::<f64>::zeros((nt, 2));
+        for t in 1..nt {
+            ts[[t, 0]] = lcg(&mut seed);
+            ts[[t, 1]] = 0.8 * ts[[t - 1, 0]] + 0.3 * lcg(&mut seed);
+        }
+        let te = compute_transfer_entropy_matrix(ts.view(), 1);
+        let all = vec![true; nt];
+        let te_m = compute_transfer_entropy_matrix_masked(ts.view(), 1, Some(&all));
+        assert!((te[[0, 1]] - te_m[[0, 1]]).abs() < 1e-12);
+        assert!(te[[0, 1]] > te[[1, 0]]);
+        // corrupt frames 100..120 and mask them: result must be close to the clean estimate
+        let mut bad = ts.clone();
+        let mut valid = vec![true; nt];
+        for t in 100..120 {
+            bad[[t, 1]] = 50.0;
+            valid[t] = false;
+        }
+        let te_bad = compute_transfer_entropy_matrix_masked(bad.view(), 1, Some(&valid));
+        assert!((te_bad[[0, 1]] - te[[0, 1]]).abs() < 0.15);
     }
 }

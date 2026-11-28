@@ -123,9 +123,10 @@ fn build_thresholded_subgraph(
             } else {
                 0.0
             };
-            let mag = sym.abs();
-            if mag.is_finite() && mag > 1e-12 {
-                pairs.push((ui, vi, mag));
+            // Positive-weight network (Rubinov & Sporns, 2011): negative correlations are not
+            // edges. Using |r| would turn anticorrelations into strong positive links.
+            if sym.is_finite() && sym > 1e-12 {
+                pairs.push((ui, vi, sym));
             }
         }
     }
@@ -362,21 +363,29 @@ fn compute_modularity_q(
     strengths: &[f64],
     comm: &[usize],
 ) -> f64 {
+    // Newman (2006) weighted modularity for a *given* partition:
+    // Q = (1/2m) * sum_c [ W_in(c) - S_c^2 / 2m ], with W_in(c) = sum_{i,j in c} A_ij (both
+    // directions) and S_c = sum_{i in c} k_i. The null term covers *all* same-community pairs.
     let total_w2: f64 = strengths.iter().sum();
     if total_w2 <= 1e-12 || p < 2 {
         return 0.0;
     }
-    let mut q_sum = 0.0_f64;
+    let n_comm = comm.iter().copied().max().map_or(0, |m| m + 1);
+    let mut w_in = vec![0.0_f64; n_comm];
+    let mut s_c = vec![0.0_f64; n_comm];
     for ui in 0..p {
         let cu = comm[ui];
+        s_c[cu] += strengths[ui];
         for &(vi, raw_w, _) in &adj[ui] {
             if comm[vi] == cu {
-                q_sum += raw_w - (strengths[ui] * strengths[vi]) / total_w2;
+                w_in[cu] += raw_w;
             }
         }
-        q_sum -= (strengths[ui] * strengths[ui]) / total_w2;
     }
-    q_sum / total_w2
+    (0..n_comm)
+        .map(|c| w_in[c] - s_c[c] * s_c[c] / total_w2)
+        .sum::<f64>()
+        / total_w2
 }
 
 fn compute_assortativity(edges: &[(usize, usize, f64)], degrees: &[usize]) -> f64 {

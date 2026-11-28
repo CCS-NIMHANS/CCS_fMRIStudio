@@ -13,10 +13,12 @@ pub enum CensorMode {
 
 impl CensorMode {
     pub fn from_str_opt(s: Option<&str>) -> Self {
+        // Default: simultaneous nuisance + DCT + spike regression, i.e. the model is fitted on
+        // retained frames only, equivalent to AFNI `3dTproject -cenmode KILL`.
         match s.map(|v| v.trim().to_ascii_lowercase()).as_deref() {
-            Some("spike") => CensorMode::Spike,
+            Some("interpolate") => CensorMode::Interpolate,
             Some("none") => CensorMode::None,
-            _ => CensorMode::Interpolate,
+            _ => CensorMode::Spike,
         }
     }
 
@@ -31,9 +33,31 @@ impl CensorMode {
 
 #[derive(Clone, Debug)]
 pub struct DenoiseResult {
+    /// Cleaned series for all `T` frames (censored frames are interpolated / spike-fitted so that
+    /// plots stay contiguous). Use [`DenoiseResult::kept_rows`] before computing any statistic.
     pub clean_ts: Array2<f64>,
     pub n_regressors: usize,
+    /// Residual degrees of freedom: `n_kept - rank([nuisance, DCT stopband])`
+    /// (censored frames are never counted as data; Power et al., 2014).
     pub dof_remaining: usize,
+    /// Indices of frames retained for statistics (FD-censored frames removed).
+    pub kept_rows: Vec<usize>,
+}
+
+impl DenoiseResult {
+    /// Returns the cleaned series restricted to retained (uncensored) frames.
+    pub fn kept_ts(&self) -> Array2<f64> {
+        select_rows(self.clean_ts.view(), &self.kept_rows)
+    }
+}
+
+/// Copies the given rows of `(T, N)` matrix into a new `(rows.len(), N)` matrix.
+pub fn select_rows(mat: ArrayView2<'_, f64>, rows: &[usize]) -> Array2<f64> {
+    let mut out = Array2::<f64>::zeros((rows.len(), mat.ncols()));
+    for (r_out, &r) in rows.iter().enumerate() {
+        out.row_mut(r_out).assign(&mat.row(r));
+    }
+    out
 }
 
 /// Linearly interpolates across contiguous motion-scrubbed timepoints per ROI column
@@ -143,6 +167,19 @@ pub fn compute_acompcor(
     mask: ArrayView3<'_, u8>,
     n_components: usize,
 ) -> Result<Array2<f64>> {
+    compute_acompcor_filtered(bold, mask, n_components, 0.0, None)
+}
+
+/// aCompCor (Behzadi et al., 2007) as implemented in fMRIPrep/nipype: voxel series are
+/// high-pass filtered with a DCT basis (`high_pass_hz`, e.g. 0.008 Hz) and linearly detrended
+/// *before* variance normalisation and SVD, so slow drifts do not dominate the components.
+pub fn compute_acompcor_filtered(
+    bold: ArrayView4<'_, f32>,
+    mask: ArrayView3<'_, u8>,
+    n_components: usize,
+    tr_sec: f64,
+    high_pass_hz: Option<f64>,
+) -> Result<Array2<f64>> {
     let bshape = bold.shape();
     let mshape = mask.shape();
     if bshape[0] != mshape[0] || bshape[1] != mshape[1] || bshape[2] != mshape[2] {
@@ -180,23 +217,57 @@ pub fn compute_acompcor(
         }
     }
 
+    if let Some(hp) = high_pass_hz {
+        if hp > 0.0 && tr_sec > 0.0 {
+            let dct = build_dct_stopband_basis(nt, tr_sec, Some(hp), None);
+            if dct.ncols() > 0 {
+                let mut cols = build_nuisance_columns(nt, None);
+                for j in 0..dct.ncols() {
+                    cols.push(dct.column(j).to_vec());
+                }
+                let y = Mat::<f64>::from_fn(nt, raw.ncols(), |r, c| raw[[r, c]]);
+                let (resid, _) = project_orthonormal(&cols, nt, &y)?;
+                for r in 0..nt {
+                    for c in 0..raw.ncols() {
+                        raw[[r, c]] = resid[(r, c)];
+                    }
+                }
+            }
+        }
+    }
+
     let valid_cols = detrend_and_standardize_cols(&mut raw);
     if valid_cols.is_empty() {
         bail!("aCompCor mask has zero non-constant voxels");
     }
 
-    let faer_mat = Mat::<f64>::from_fn(nt, valid_cols.len(), |r, c| raw[[r, valid_cols[c]]]);
-    let svd = faer_mat
-        .thin_svd()
-        .map_err(|e| anyhow::anyhow!("aCompCor SVD failed: {e:?}"))?;
-    let u = svd.U();
-    let keep = n_components.min(u.ncols());
+    let comps = top_left_singular_vectors(&raw, &valid_cols, n_components)?;
+    Ok(comps)
+}
 
-    let mut comps = Array2::<f64>::zeros((nt, keep));
-    for r in 0..nt {
-        for c in 0..keep {
-            comps[[r, c]] = u[(r, c)];
+/// Leading left singular vectors of `raw[:, cols]` (T x V). Uses the thin SVD and, if that returns
+/// non-finite values (observed for some 729 x 3526 inputs), the SVD of the T x T Gram matrix
+/// `X X^T = U S^2 U^T`, which is small and well conditioned for T << V.
+fn top_left_singular_vectors(raw: &Array2<f64>, cols: &[usize], n_components: usize) -> Result<Array2<f64>> {
+    let nt = raw.nrows();
+    let x = Mat::<f64>::from_fn(nt, cols.len(), |r, c| raw[[r, cols[c]]]);
+    let extract = |u: faer::MatRef<'_, f64>| -> Array2<f64> {
+        let keep = n_components.min(u.ncols());
+        Array2::from_shape_fn((nt, keep), |(r, c)| u[(r, c)])
+    };
+    if let Ok(svd) = x.thin_svd() {
+        let comps = extract(svd.U());
+        if comps.iter().all(|v| v.is_finite()) {
+            return Ok(comps);
         }
+    }
+    let gram = &x * x.transpose();
+    let svd = gram
+        .thin_svd()
+        .map_err(|e| anyhow::anyhow!("aCompCor Gram SVD failed: {e:?}"))?;
+    let comps = extract(svd.U());
+    if !comps.iter().all(|v| v.is_finite()) {
+        bail!("aCompCor decomposition produced non-finite components");
     }
     Ok(comps)
 }
@@ -395,6 +466,19 @@ fn regress_nuisance_on_intact_and_interpolate(
     Ok((clean_mat, n_reg))
 }
 
+/// Numerical rank of the design matrix (columns) restricted to `rows`.
+fn rank_on_rows(columns: &[Vec<f64>], rows: &[usize]) -> Result<usize> {
+    if columns.is_empty() || rows.is_empty() {
+        return Ok(0);
+    }
+    let x = Mat::<f64>::from_fn(rows.len(), columns.len(), |r, c| columns[c][rows[r]]);
+    let svd = x.thin_svd().map_err(|e| anyhow::anyhow!("Rank SVD failed: {e:?}"))?;
+    let sv = svd.S();
+    let k = rows.len().min(columns.len());
+    let s_max = (0..k).map(|i| sv[i].abs()).fold(0.0_f64, f64::max);
+    Ok((0..k).filter(|&i| sv[i].abs() > s_max * 1e-10).count())
+}
+
 /// Performs single-step simultaneous nuisance regression + DCT stopband filtering + selectable censoring.
 pub fn simultaneous_denoise_with_mode(
     timeseries: ArrayView2<'_, f64>,
@@ -419,6 +503,16 @@ pub fn simultaneous_denoise_with_mode(
         }
     }
 
+    let mut unique_spikes: Vec<usize> = fd_scrub_indices.iter().copied().filter(|&i| i < nt).collect();
+    unique_spikes.sort_unstable();
+    unique_spikes.dedup();
+    let kept_rows: Vec<usize> = if censor_mode == CensorMode::None {
+        (0..nt).collect()
+    } else {
+        (0..nt).filter(|t| unique_spikes.binary_search(t).is_err()).collect()
+    };
+    let n_kept = kept_rows.len();
+
     let valid_rois: Vec<usize> = (0..n_rois)
         .filter(|&c| timeseries.column(c).iter().all(|v| v.is_finite()))
         .collect();
@@ -426,16 +520,13 @@ pub fn simultaneous_denoise_with_mode(
         return Ok(DenoiseResult {
             clean_ts: Array2::from_elem((nt, n_rois), f64::NAN),
             n_regressors: 0,
-            dof_remaining: nt,
+            dof_remaining: n_kept,
+            kept_rows,
         });
     }
 
     let dct = build_dct_stopband_basis(nt, tr_sec, low_hz, high_hz);
     let mut columns = build_nuisance_columns(nt, confounds);
-
-    let mut unique_spikes: Vec<usize> = fd_scrub_indices.iter().copied().filter(|&i| i < nt).collect();
-    unique_spikes.sort_unstable();
-    unique_spikes.dedup();
 
     let y_mat = Mat::<f64>::from_fn(nt, valid_rois.len(), |r, c| timeseries[[r, valid_rois[c]]]);
 
@@ -444,7 +535,7 @@ pub fn simultaneous_denoise_with_mode(
             regress_nuisance_on_intact_and_interpolate(&y_mat, &columns, &dct, &unique_spikes, nt)?
         }
         CensorMode::Spike => {
-            for idx in unique_spikes {
+            for &idx in &unique_spikes {
                 let mut spike = vec![0.0_f64; nt];
                 spike[idx] = 1.0;
                 columns.push(spike);
@@ -467,19 +558,20 @@ pub fn simultaneous_denoise_with_mode(
         for r in 0..nt {
             out[[r, roi_c]] = y_clean_mat[(r, vc_idx)];
         }
-        if zscore_output {
+        if zscore_output && n_kept > 1 {
             let mut sum = 0.0_f64;
-            for r in 0..nt {
+            for &r in &kept_rows {
                 sum += out[[r, roi_c]];
             }
-            let mean = sum / (nt as f64);
+            let mean = sum / (n_kept as f64);
             let mut ss = 0.0_f64;
             for r in 0..nt {
-                let d = out[[r, roi_c]] - mean;
-                out[[r, roi_c]] = d;
-                ss += d * d;
+                out[[r, roi_c]] -= mean;
             }
-            let std = (ss / ((nt - 1) as f64)).sqrt();
+            for &r in &kept_rows {
+                ss += out[[r, roi_c]] * out[[r, roi_c]];
+            }
+            let std = (ss / ((n_kept - 1) as f64)).sqrt();
             if std > 1e-12 {
                 for r in 0..nt {
                     out[[r, roi_c]] /= std;
@@ -488,10 +580,22 @@ pub fn simultaneous_denoise_with_mode(
         }
     }
 
+    // Residual DOF = retained frames minus the rank of the (non-spike) design restricted to those
+    // frames. For spike regression this equals T - rank([design, spikes]).
+    let dof_remaining = if censor_mode == CensorMode::Spike {
+        nt.saturating_sub(n_regressors)
+    } else {
+        let mut design = build_nuisance_columns(nt, confounds);
+        for j in 0..dct.ncols() {
+            design.push(dct.column(j).to_vec());
+        }
+        n_kept.saturating_sub(rank_on_rows(&design, &kept_rows)?)
+    };
     Ok(DenoiseResult {
         clean_ts: out,
         n_regressors,
-        dof_remaining: nt.saturating_sub(n_regressors),
+        dof_remaining,
+        kept_rows,
     })
 }
 
