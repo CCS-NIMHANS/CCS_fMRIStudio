@@ -54,6 +54,15 @@ Validity release following an external code review and benchmark against fMRIPre
   confound matrices are rejected with an error.
 - Inputs are verified against nibabel (ITK silently zero-filled volumes from cloud-synced files still downloading).
 
+### Added
+- **Publication figures (`pub_figures.py`; buttons in *Summary & Export* and *Stats → Group*):** report-style 300-dpi PNG + SVG
+  figures. Per subject: anatomy and tissue masks, head motion, before/after denoising (carpets, FC distributions),
+  connectome (ROI and network level), timescales by network, seed map. Per group/session/condition: network FC per group
+  and their difference, within/between-network FC per subject, edge-wise FC, summary metrics, timescales by network.
+  Runs below 30 residual DOF are excluded from group figures and listed in `group_inclusion.json`.
+- `raw_timeseries.csv` (pre-denoising ROI series) is exported with the results.
+- Validation report: [`docs/validation/v0.5.0/REPORT.md`](docs/validation/v0.5.0/REPORT.md).
+
 ### Fixed (statistics, `nilearn_stats.py`)
 - Seed maps: voxels are cleaned with exactly the same model as the seed (same confounds, censoring, DCT band) and
   z = atanh(r)·√(DOF−3) instead of √(T−3) (v0.4.1 inflated z ~2–3×, yielding 38–70 k "significant" voxels per seed).

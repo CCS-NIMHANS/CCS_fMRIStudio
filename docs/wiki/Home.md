@@ -3,7 +3,7 @@
 A visual, technical guide to **CCS fMRI Studio** — a cross-platform desktop fMRI preprocessing, denoising, parcellation, and EEG-style timeseries/connectivity workbench powered by **Flutter + Rust + an embedded ANTsPy/nilearn Python sidecar** without FSL, AFNI, or Docker dependencies.
 
 
-> 📄 **New in v0.5.0:** [Validation Report](../validation/v0.5.0/REPORT.md) ([PDF](../validation/v0.5.0/REPORT.pdf)): benchmarks against fMRIPrep and nilearn, plus concordance of sleep and psilocybin effects.
+> 📄 **New in v0.5.0:** [Validation Report](../validation/v0.5.0/REPORT.md) ([PDF](../validation/v0.5.0/REPORT.pdf)): benchmarks against fMRIPrep and nilearn, plus concordance of sleep and psilocybin effects. The app can generate the same style of publication figures from your own data (Summary & Export → *Generate Publication Figures*; Stats → *Group Publication Figures*).
 
 ---
 

@@ -1238,7 +1238,7 @@ pub fn run_lesion_aware_pipeline(
                 | **Laterality Index** | {laterality_index:.4} |\n\
                 | **Lesion-Seed Mean \\|r\\|** | {lesion_seed_mean_abs_r:.4} |\n\
                 | **Rust Processing Time** | {total_ms:.1} ms (mmap: {}) |\n\n\
-                Generated files: `fc_matrix.csv`, `partial_fc_matrix.csv`, `gcmi_matrix.csv`, `te_matrix.csv`, `denoised_timeseries.csv` (all frames; censored frames interpolated for display), `censor_mask.csv` (1 = retained), `confounds_used.csv`, `biomarkers_summary.json`, `clinical_report.md`. All statistics use retained frames only.\n",
+                Generated files: `fc_matrix.csv`, `partial_fc_matrix.csv`, `gcmi_matrix.csv`, `te_matrix.csv`, `denoised_timeseries.csv` (all frames), `raw_timeseries.csv` (before denoising), `censor_mask.csv` (1 = retained), `confounds_used.csv`, `biomarkers_summary.json`, `clinical_report.md`. All statistics use retained frames only.\n",
                 graph.n_intact_nodes,
                 n_rois,
                 graph.n_excluded_nodes,
@@ -1257,6 +1257,8 @@ pub fn run_lesion_aware_pipeline(
                 &summary_json,
                 &report_md,
             )?;
+            // Raw (pre-denoising) ROI series, for before/after denoising figures.
+            write_matrix_csv(&Path::new(dir.trim()).join("raw_timeseries.csv"), parc.timeseries.view())?;
             write_matrix_csv(&Path::new(dir.trim()).join("censor_mask.csv"), {
                 let mut m = Array2::<f64>::zeros((nt, 1));
                 for &r in &kept_rows {

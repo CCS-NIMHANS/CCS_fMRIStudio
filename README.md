@@ -92,6 +92,8 @@ processed with ≤ 0.4.1.**
 - **Statistics fixes:** Newman modularity formula, positive-weight graphs, seed maps with matched cleaning and DOF-based z.
 - **Per-subject `qc_report.html`** (fMRIPrep-style): alignment overlays, tissue masks, motion/FD/DVARS, carpet plot,
   parcel coverage and an auto-generated methods paragraph.
+- **Publication figures in the app:** a *Generate Publication Figures* button (Summary & Export) and a *Group Publication
+  Figures* button (Stats → Group) write report-style 300-dpi PNG + SVG figures for a subject or a session/condition contrast.
 
 ## ✨ What's New in v0.4.0
 

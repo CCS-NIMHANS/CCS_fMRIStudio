@@ -70,6 +70,7 @@ class FmriSessionState extends ChangeNotifier {
     'python_sidecar/src/ccs_fmri_sidecar/templates.py',
     'python_sidecar/src/ccs_fmri_sidecar/tf_templates.py',
     'python_sidecar/src/ccs_fmri_sidecar/qc_report.py',
+    'python_sidecar/src/ccs_fmri_sidecar/pub_figures.py',
     'python_sidecar/src/ccs_fmri_sidecar/group_lmm.py',
     'python_sidecar/src/ccs_fmri_sidecar/nilearn_stats.py',
     'python_sidecar/src/ccs_fmri_sidecar/benchmark_vs_nilearn.py',
